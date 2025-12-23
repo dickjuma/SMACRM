@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Lock, Mail, Loader2, Shield } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
-
+const BASE_URL= process.env.REACT_APP_BACKEND_URL
+const API_URL = `${BASE_URL}/auth`;
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,7 +17,7 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
+      const response = await fetch(`${API_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // credentials: "include" is only needed if you use HTTP-Only Cookies. 

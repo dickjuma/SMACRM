@@ -9,8 +9,9 @@ import {
   Search, Printer, Trash2, Receipt, FileCheck, 
   RefreshCw, Download, ArrowDownLeft, ShieldCheck
 } from "lucide-react";
+const BASE_URL= process.env.REACT_APP_BACKEND_URL
 
-const API_URL = "http://localhost:5000/api/invoices";
+const API_URL = `${BASE_URL}/invoices`;
 
 // --- AUTHENTICATED AXIOS INSTANCE ---
 const api = axios.create();

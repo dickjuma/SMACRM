@@ -7,8 +7,9 @@ import {
   Lock, AlertTriangle, RefreshCw
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
+const BASE_URL= process.env.REACT_APP_BACKEND_URL
 
-const API_URL = "http://localhost:5000/api/auth";
+const API_URL = `${BASE_URL}/auth`;
 
 const api = axios.create();
 api.interceptors.request.use((config) => {

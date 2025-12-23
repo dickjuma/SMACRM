@@ -14,8 +14,9 @@ import {
   Filter, MoreHorizontal, ArrowUpRight, MapPin, Hash,
   FileText, Table
 } from "lucide-react";
+const BASE_URL= process.env.REACT_APP_BACKEND_URL
 
-const API_URL = "http://localhost:5000/api/clients";
+const API_URL = `${BASE_URL}/clients`;
 
 const Clients = () => {
   const { token, logout } = useAuth(); 

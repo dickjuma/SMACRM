@@ -10,9 +10,9 @@ import {
   Plus, RefreshCw, X, Search, FileText,
   Globe, Mail, MapPin, CheckCircle2, AlertCircle
 } from "lucide-react";
-
-const API_URL = "http://localhost:5000/api/invoices";
-const CLIENTS_API_URL = "http://localhost:5000/api/clients";
+const BASE_URL= process.env.REACT_APP_BACKEND_URL
+const API_URL = `${BASE_URL}/invoices`;
+const CLIENTS_API_URL = `${BASE_URL}/clients`;
 
 // --- AUTHENTICATION LOGIC ---
 const api = axios.create();

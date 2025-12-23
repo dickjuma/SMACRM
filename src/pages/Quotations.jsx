@@ -9,9 +9,9 @@ import {
   Eye, Edit, Trash2, Plus, RefreshCcw, X, Search, 
   MapPin, Globe, ShieldCheck, Activity, Clock, Save, Hash
 } from "lucide-react";
-
-const API_URL = "http://localhost:5000/api/quotations";
-const CLIENTS_API_URL = "http://localhost:5000/api/clients";
+const BASE_URL= process.env.REACT_APP_BACKEND_URL
+const API_URL = `${BASE_URL}/quotations`;
+const CLIENTS_API_URL = `${BASE_URL}/clients`;
 
 // --- AUTHENTICATED AXIOS INSTANCE ---
 const api = axios.create();
