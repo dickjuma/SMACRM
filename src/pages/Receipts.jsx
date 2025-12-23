@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { useReactToPrint } from "react-to-print";
 import toast, { Toaster } from "react-hot-toast";
@@ -9,7 +10,7 @@ import {
   RefreshCw, Download, ArrowDownLeft, ShieldCheck
 } from "lucide-react";
 
-const API_URL = "http://localhost:5000/api/invoices"; // Receipts usually fetch from paid invoices
+const API_URL = "http://localhost:5000/api/invoices";
 
 // --- AUTHENTICATED AXIOS INSTANCE ---
 const api = axios.create();
@@ -19,28 +20,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// --- API FUNCTIONS ---
+const fetchPaidInvoices = async () => {
+  const response = await api.get(API_URL);
+  // Filter for "Paid" status to represent Receipts
+  return response.data.filter(inv => inv.status === "Paid");
+};
+
 const Receipts = () => {
-  const [receipts, setReceipts] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState(null);
-
   const printRef = useRef();
 
-  // --- LOGIC: PRINT HANDLER ---
+  // --- QUERY: FETCH RECEIPTS ---
+  const { 
+    data: receipts = [], 
+    isLoading, 
+    isFetching, 
+    refetch 
+  } = useQuery({
+    queryKey: ["receipts"],
+    queryFn: fetchPaidInvoices,
+    onSuccess: (data) => {
+      // Auto-select first receipt if none selected and data exists
+      if (data.length > 0 && !selectedReceipt) {
+        setSelectedReceipt(data[0]);
+      }
+    },
+    onError: () => toast.error("Registry Sync Failed"),
+  });
+
+  // --- MUTATION: DELETE RECEIPT ---
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`${API_URL}/${id}`),
+    onSuccess: (_, deletedId) => {
+      queryClient.invalidateQueries(["receipts"]);
+      if (selectedReceipt?._id === deletedId) setSelectedReceipt(null);
+      toast.success("Record Archived");
+    },
+    onError: () => toast.error("Delete Protocol Failed"),
+  });
+
+  // --- PRINT HANDLER ---
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
     documentTitle: `SMA_RECEIPT_${selectedReceipt?._id?.slice(-6).toUpperCase()}`,
   });
 
-  // --- LOGIC: PDF GENERATION ---
+  // --- PDF GENERATION ---
   const downloadPDF = async () => {
     if (!selectedReceipt) return;
     const toastId = toast.loading("Synthesizing PDF Document...");
     try {
       const element = printRef.current;
       const canvas = await html2canvas(element, { 
-        scale: 3, // High DPI for printing
+        scale: 3, 
         useCORS: true,
         backgroundColor: "#ffffff"
       });
@@ -54,41 +89,6 @@ const Receipts = () => {
       toast.success("Certificate Downloaded", { id: toastId });
     } catch (error) {
       toast.error("PDF Engine Error", { id: toastId });
-    }
-  };
-
-  // --- LOGIC: FETCH DATA (Only Paid Invoices = Receipts) ---
-  const fetchReceipts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await api.get(API_URL);
-      // Filter for "Paid" status to represent Receipts
-      const paidOnly = response.data.filter(inv => inv.status === "Paid");
-      setReceipts(paidOnly);
-      
-      // Auto-select first receipt if none selected
-      if (paidOnly.length > 0 && !selectedReceipt) {
-        setSelectedReceipt(paidOnly[0]);
-      }
-    } catch (error) {
-      toast.error("Registry Sync Failed");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedReceipt]);
-
-  useEffect(() => { fetchReceipts(); }, [fetchReceipts]);
-
-  // --- LOGIC: DELETE HANDLER ---
-  const handleDelete = async (id) => {
-    if (!window.confirm("Archiving this record is permanent. Proceed?")) return;
-    try {
-      await api.delete(`${API_URL}/${id}`);
-      setReceipts(prev => prev.filter(r => r._id !== id));
-      if (selectedReceipt?._id === id) setSelectedReceipt(null);
-      toast.success("Record Archived");
-    } catch (error) {
-      toast.error("Delete Protocol Failed");
     }
   };
 
@@ -111,8 +111,8 @@ const Receipts = () => {
               </div>
               <h1 className="font-black uppercase tracking-widest text-white text-[10px]">Settlement_Registry</h1>
             </div>
-            <button onClick={fetchReceipts} className="p-1.5 text-slate-500 hover:text-white transition-colors">
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+            <button onClick={() => refetch()} className="p-1.5 text-slate-500 hover:text-white transition-colors">
+              <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
             </button>
           </div>
           <div className="relative">
@@ -128,31 +128,34 @@ const Receipts = () => {
         </header>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0F172A]">
-          {filteredReceipts.length === 0 && !loading && (
-             <p className="p-10 text-center text-slate-600 italic">No settled entries found.</p>
-          )}
-          {filteredReceipts.map((inv) => (
-            <div 
-              key={inv._id} 
-              onClick={() => setSelectedReceipt(inv)}
-              className={`p-4 cursor-pointer border-b border-slate-800/40 transition-all flex items-center justify-between group ${selectedReceipt?._id === inv._id ? 'bg-slate-800/60 border-r-2 border-r-emerald-500' : 'hover:bg-slate-800/30'}`}
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[9px] text-slate-500">#{inv._id?.slice(-6).toUpperCase()}</span>
-                  <span className="text-[8px] px-1 bg-emerald-500/10 text-emerald-500 rounded font-black uppercase tracking-tighter">Settled</span>
+          {isLoading ? (
+            <div className="p-10 text-center animate-pulse text-slate-600 uppercase tracking-widest">Loading Registry...</div>
+          ) : filteredReceipts.length === 0 ? (
+            <p className="p-10 text-center text-slate-600 italic">No settled entries found.</p>
+          ) : (
+            filteredReceipts.map((inv) => (
+              <div 
+                key={inv._id} 
+                onClick={() => setSelectedReceipt(inv)}
+                className={`p-4 cursor-pointer border-b border-slate-800/40 transition-all flex items-center justify-between group ${selectedReceipt?._id === inv._id ? 'bg-slate-800/60 border-r-2 border-r-emerald-50' : 'hover:bg-slate-800/30'}`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[9px] text-slate-500">#{inv._id?.slice(-6).toUpperCase()}</span>
+                    <span className="text-[8px] px-1 bg-emerald-500/10 text-emerald-500 rounded font-black uppercase tracking-tighter">Settled</span>
+                  </div>
+                  <p className="font-black text-slate-200 uppercase tracking-tight truncate w-32">{inv.client?.name || "Unassigned"}</p>
+                  <p className="text-[9px] text-slate-600 flex items-center gap-1"><ArrowDownLeft className="w-2 h-2" /> {inv.date}</p>
                 </div>
-                <p className="font-black text-slate-200 uppercase tracking-tight truncate w-32">{inv.client?.name || "Unassigned"}</p>
-                <p className="text-[9px] text-slate-600 flex items-center gap-1"><ArrowDownLeft className="w-2 h-2" /> {inv.date}</p>
+                <div className="text-right">
+                  <p className="font-mono font-black text-emerald-400 text-xs">
+                    {inv.items?.reduce((s,i)=>s+i.total,0).toLocaleString()}
+                  </p>
+                  <p className="text-[8px] text-slate-600 font-bold uppercase">{inv.currency}</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="font-mono font-black text-emerald-400 text-xs">
-                  {inv.items?.reduce((s,i)=>s+i.total,0).toLocaleString()}
-                </p>
-                <p className="text-[8px] text-slate-600 font-bold uppercase">{inv.currency}</p>
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
@@ -170,7 +173,12 @@ const Receipts = () => {
                   <Download className="w-3 h-3"/> PDF Export
                 </button>
                 <button onClick={handlePrint} className="p-2 bg-white border border-slate-200 hover:bg-slate-50 rounded text-slate-600 shadow-sm transition-all"><Printer className="w-3.5 h-3.5"/></button>
-                <button onClick={() => handleDelete(selectedReceipt._id)} className="p-2 bg-white border border-slate-200 hover:text-red-500 rounded text-slate-400 shadow-sm transition-all"><Trash2 className="w-3.5 h-3.5"/></button>
+                <button 
+                  onClick={() => { if(window.confirm("Archive record?")) deleteMutation.mutate(selectedReceipt._id) }} 
+                  className="p-2 bg-white border border-slate-200 hover:text-red-500 rounded text-slate-400 shadow-sm transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5"/>
+                </button>
               </div>
             </header>
 

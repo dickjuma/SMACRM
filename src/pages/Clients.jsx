@@ -1,32 +1,35 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import axios from "axios";
 import toast, { Toaster } from "react-hot-toast";
-// 1. IMPORT YOUR AUTH HOOK (Assumed path)
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext"; 
+// Export Utilities
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { 
   RefreshCw, UserPlus, Save, X, Search, 
   Trash2, Edit3, Building2, LayoutGrid, List, 
   ChevronLeft, ChevronRight, Download, Mail, 
   Phone, Activity, Zap, ShieldCheck, Target,
-  Filter, MoreHorizontal, ArrowUpRight, MapPin, Hash
+  Filter, MoreHorizontal, ArrowUpRight, MapPin, Hash,
+  FileText, Table
 } from "lucide-react";
 
 const API_URL = "http://localhost:5000/api/clients";
 
 const Clients = () => {
-  // 2. EXTRACT TOKEN & LOGOUT FROM AUTH CONTEXT
   const { token, logout } = useAuth(); 
+  const queryClient = useQueryClient();
 
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // --- UI STATES ---
   const [showForm, setShowForm] = useState(false);
   const [viewMode, setViewMode] = useState("table");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingClient, setEditingClient] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(12);
+  const [rowsPerPage] = useState(12);
 
-  // 3. SECURE AXIOS INSTANCE (Attaches Token to every request)
+  // --- SECURE AXIOS INSTANCE ---
   const api = useMemo(() => {
     const instance = axios.create({
       baseURL: API_URL,
@@ -36,9 +39,8 @@ const Clients = () => {
       }
     });
 
-    // Handle session expiration (401)
     instance.interceptors.response.use(
-      (response) => response,
+      (r) => r,
       (error) => {
         if (error.response?.status === 401) {
           toast.error("SESSION EXPIRED - RE-AUTHENTICATING");
@@ -50,40 +52,123 @@ const Clients = () => {
     return instance;
   }, [token, logout]);
 
+  // --- CACHE FETCHING & OPTIMIZATION ---
+  const { 
+    data: clients = [], 
+    isLoading: loading, 
+    isFetching, 
+    refetch 
+  } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const res = await api.get("/");
+      return res.data;
+    },
+    // Optimization: Sort by most recent ID (hex timestamp) automatically
+    select: (data) => [...data].sort((a, b) => b._id.localeCompare(a._id)),
+    enabled: !!token,
+    staleTime: 1000 * 60 * 10, // 10 mins (Data stays fresh longer)
+  });
+
+  // --- EXPORT LOGIC ---
+  const exportToCSV = () => {
+    const headers = "Name,Email,Phone,KRA_PIN,City,Status\n";
+    const rows = clients.map(c => 
+      `${c.name},${c.email},${c.phone},${c.kraPin},${c.address?.city},${c.status}`
+    ).join("\n");
+    
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Registry_Node_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    toast.success("CSV_DATA_PACK_EXTRACTED");
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFont("courier", "bold");
+    doc.setFontSize(12);
+    doc.text("CORE_REGISTRY_GLOBAL_EXPORT // 2025", 14, 15);
+    doc.setFontSize(8);
+    doc.text(`TIMESTAMP: ${new Date().toLocaleString()}`, 14, 20);
+    
+    autoTable(doc, {
+      head: [['ENTITY_ID', 'COMMS_CHANNEL', 'FISCAL_PIN', 'GEOSPATIAL_HUB', 'STATUS']],
+      body: clients.map(c => [
+        c.name.toUpperCase(),
+        c.email,
+        c.kraPin || "N/A",
+        c.address?.city?.toUpperCase() || "N/A",
+        c.status.toUpperCase()
+      ]),
+      startY: 25,
+      theme: 'grid',
+      styles: { fontSize: 7, font: 'courier' },
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] }
+    });
+
+    doc.save(`Registry_Report_${Date.now()}.pdf`);
+    toast.success("PDF_STREAM_FINALIZED");
+  };
+
+  // --- OPTIMISTIC MUTATIONS ---
+  const clientMutation = useMutation({
+    mutationFn: async (payload) => {
+      if (editingClient) return api.put(`/${editingClient._id}`, payload);
+      return api.post("/", payload);
+    },
+    onMutate: async (newClient) => {
+      await queryClient.cancelQueries({ queryKey: ["clients"] });
+      const previousClients = queryClient.getQueryData(["clients"]);
+      
+      queryClient.setQueryData(["clients"], (old) => {
+        if (editingClient) {
+          return old.map(c => c._id === editingClient._id ? { ...c, ...newClient } : c);
+        }
+        return [{ ...newClient, _id: `temp-${Date.now()}` }, ...old];
+      });
+
+      return { previousClients };
+    },
+    onError: (err, newClient, context) => {
+      queryClient.setQueryData(["clients"], context.previousClients);
+      toast.error("WRITE_FAIL - CACHE_RESTORED");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      if (!clientMutation.isError) {
+        toast.success(editingClient ? "ENTITY_PATCHED" : "INITIALIZATION_COMPLETE");
+        closeForm();
+      }
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/${id}`),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["clients"] });
+      const previousClients = queryClient.getQueryData(["clients"]);
+      queryClient.setQueryData(["clients"], (old) => old.filter(c => c._id !== id));
+      return { previousClients };
+    },
+    onError: (err, id, context) => {
+      queryClient.setQueryData(["clients"], context.previousClients);
+      toast.error("PURGE_REJECTED");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["clients"] })
+  });
+
+  // --- FORM LOGIC ---
   const initialForm = {
     name: "", email: "", phone: "", kraPin: "", 
     currency: "KES", paymentTerms: "Net 30",
-    address: {
-      street: "",
-      building: "",
-      city: "",
-      postalCode: ""
-    },
+    address: { street: "", building: "", city: "", postalCode: "" },
     status: "Active"
   };
 
   const [formData, setFormData] = useState(initialForm);
-
-  const fetchClients = async (isRefresh = false) => {
-    // Prevent fetching if no token exists
-    if (!token) return; 
-
-    setLoading(true);
-    try {
-      // 4. USE SECURE API INSTANCE
-      const res = await api.get("/");
-      setClients(res.data);
-      if (isRefresh) toast.success("LOCAL CACHE SYNCHRONIZED");
-    } catch (err) {
-      toast.error(err.response?.data?.message || "GATEWAY TIMEOUT");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { 
-    fetchClients(); 
-  }, [token]); // Re-fetch if token changes
 
   const handleAddressChange = (field, value) => {
     setFormData(prev => ({
@@ -92,41 +177,9 @@ const Clients = () => {
     }));
   };
 
-  const handleDelete = async (id, name) => {
+  const handleDelete = (id, name) => {
     if (!window.confirm(`PERMANENTLY DE-REGISTER ${name.toUpperCase()}?`)) return;
-    const tid = toast.loading("PURGING DATA...");
-    try {
-      // 5. USE SECURE API INSTANCE
-      await api.delete(`/${id}`);
-      setClients(prev => prev.filter(c => c._id !== id));
-      toast.success("ENTRY REMOVED", { id: tid });
-    } catch (err) {
-      toast.error("PERMISSION DENIED", { id: tid });
-    }
-  };
-
-  const handleSaveClient = async (e) => {
-    e.preventDefault();
-    const tid = toast.loading("VALIDATING...");
-    
-    const payload = { ...formData }; 
-
-    try {
-      if (editingClient) {
-        // 6. USE SECURE API INSTANCE
-        const res = await api.put(`/${editingClient._id}`, payload);
-        setClients(clients.map(c => (c._id === editingClient._id ? res.data : c)));
-        toast.success("RECORDS PATCHED", { id: tid });
-      } else {
-        // 7. USE SECURE API INSTANCE
-        const res = await api.post("/", payload);
-        setClients([res.data, ...clients]);
-        toast.success("ENTITY INDEXED", { id: tid });
-      }
-      closeForm();
-    } catch (err) {
-      toast.error(err.response?.data?.message || "WRITE ERROR", { id: tid });
-    }
+    deleteMutation.mutate(id);
   };
 
   const closeForm = () => {
@@ -135,6 +188,7 @@ const Clients = () => {
     setFormData(initialForm);
   };
 
+  // --- FILTERING & PAGINATION ---
   const filteredClients = useMemo(() => {
     return clients.filter(c => 
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -142,7 +196,7 @@ const Clients = () => {
     );
   }, [clients, searchQuery]);
 
-  const totalPages = Math.ceil(filteredClients.length / rowsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / rowsPerPage));
   const currentRows = filteredClients.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
   return (
@@ -154,7 +208,7 @@ const Clients = () => {
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 bg-slate-900 rounded-lg flex items-center justify-center shadow-lg shadow-slate-200">
-                <Activity className="w-4 h-4 text-emerald-400" />
+                <Activity className={`w-4 h-4 ${isFetching ? 'text-indigo-400 animate-spin' : 'text-emerald-400'}`} />
             </div>
             <div>
               <h1 className="text-[11px] font-black uppercase tracking-[0.15em]">Core_Registry</h1>
@@ -166,10 +220,6 @@ const Clients = () => {
             <div className="flex flex-col">
                 <span className="text-[8px] font-black text-slate-400 uppercase">Live_Nodes</span>
                 <span className="font-bold text-indigo-600">{clients.length} Units</span>
-            </div>
-            <div className="flex flex-col">
-                <span className="text-[8px] font-black text-slate-400 uppercase">Health_Score</span>
-                <span className="font-bold text-emerald-600">98.2%</span>
             </div>
           </div>
         </div>
@@ -192,20 +242,29 @@ const Clients = () => {
       </header>
 
       <main className="max-w-[1500px] mx-auto p-6 space-y-4">
+        {/* ACTION BAR WITH EXPORTS */}
         <div className="flex items-center justify-between bg-white/50 p-1.5 rounded-xl border border-white shadow-sm backdrop-blur-sm">
            <div className="flex gap-1">
               <button onClick={() => setViewMode("table")} className={`p-2 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}><List size={14}/></button>
               <button onClick={() => setViewMode("grid")} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}><LayoutGrid size={14}/></button>
            </div>
+           
            <div className="flex items-center gap-1.5 px-2">
-              <button onClick={() => fetchClients(true)} className="p-2 text-slate-400 hover:text-indigo-600"><RefreshCw size={13} className={loading ? "animate-spin" : ""}/></button>
+              <button onClick={exportToPDF} className="flex items-center gap-1 text-[8px] font-black uppercase text-slate-400 hover:text-red-500 px-3 transition-all"><FileText size={12}/> PDF</button>
+              <button onClick={exportToCSV} className="flex items-center gap-1 text-[8px] font-black uppercase text-slate-400 hover:text-emerald-600 px-3 border-r border-slate-200 transition-all"><Table size={12}/> CSV</button>
+              <button onClick={() => refetch()} className="p-2 text-slate-400 hover:text-indigo-600"><RefreshCw size={13} className={isFetching ? "animate-spin" : ""}/></button>
               <button className="p-2 text-slate-400 hover:text-indigo-600"><Filter size={13}/></button>
-              <button className="p-2 text-slate-400 hover:text-indigo-600"><Download size={13}/></button>
            </div>
         </div>
 
+        {/* DATA CONTAINER */}
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden min-h-[600px] flex flex-col">
-          {viewMode === "table" ? (
+          {loading && clients.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2">
+               <Activity className="w-8 h-8 text-indigo-600 animate-pulse" />
+               <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Pulling_Registry_Data...</span>
+            </div>
+          ) : viewMode === "table" ? (
             <div className="flex-1 overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -223,7 +282,7 @@ const Clients = () => {
                       <td className="px-6 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 font-black text-[10px] border border-slate-200 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                            {client.name.charAt(0)}
+                            {client.name?.charAt(0) || 'U'}
                           </div>
                           <div>
                             <div className="font-bold text-slate-800 text-[10px] uppercase">{client.name}</div>
@@ -246,7 +305,7 @@ const Clients = () => {
                          </div>
                       </td>
                       <td className="px-6 py-3 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[8px] font-black uppercase ${client.status === 'Active' ? 'bg-emerald-50 border-emerald-100 text-emerald-600 shadow-sm shadow-emerald-50' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[8px] font-black uppercase ${client.status === 'Active' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
                             <div className={`w-1 h-1 rounded-full ${client.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
                             {client.status}
                         </span>
@@ -268,7 +327,7 @@ const Clients = () => {
                   <div key={client._id} className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 hover:bg-white hover:shadow-lg hover:border-indigo-100 transition-all duration-300 group">
                      <div className="flex justify-between items-start mb-4">
                         <div className="w-9 h-9 bg-white text-indigo-600 rounded-lg flex items-center justify-center font-black text-xs border border-slate-100">
-                           {client.name.charAt(0)}
+                           {client.name?.charAt(0) || 'U'}
                         </div>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                             <button onClick={() => {setEditingClient(client); setFormData({...client}); setShowForm(true);}} className="p-1.5 bg-slate-900 text-white rounded-md shadow-lg"><Edit3 size={11}/></button>
@@ -288,7 +347,7 @@ const Clients = () => {
               </div>
           )}
 
-          {/* COMPACT PAGINATION */}
+          {/* PAGINATION */}
           <div className="mt-auto px-6 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
               <span className="text-[8px] font-black text-slate-400 uppercase">Registry_Entry: {filteredClients.length} Objects</span>
               <div className="flex items-center gap-2">
@@ -300,7 +359,7 @@ const Clients = () => {
         </div>
       </main>
 
-      {/* FORM UI */}
+      {/* FORM UI - Restored Exact Design */}
       {showForm && (
         <div className="fixed inset-0 bg-slate-900/10 backdrop-blur-sm flex items-center justify-end z-[100] p-3">
           <div className="bg-white h-full w-full max-w-[380px] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
@@ -312,14 +371,12 @@ const Clients = () => {
               <button onClick={closeForm} className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all border border-transparent hover:border-slate-100"><X size={16}/></button>
             </div>
 
-            <form className="flex-1 overflow-y-auto p-6 space-y-6" onSubmit={handleSaveClient}>
-              {/* PRIMARY IDENTITY */}
+            <form className="flex-1 overflow-y-auto p-6 space-y-6" onSubmit={(e) => { e.preventDefault(); clientMutation.mutate(formData); }}>
               <div className="space-y-4">
                   <div className="space-y-1">
                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Entity_Name</label>
                      <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-100 border-none p-3 rounded-lg text-[10px] font-black outline-none focus:bg-white transition-all" required />
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
                      <div className="space-y-1">
                         <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Comms_Mail</label>
@@ -332,64 +389,36 @@ const Clients = () => {
                   </div>
               </div>
 
-              {/* GEOSPATIAL_NODE */}
               <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
-                <div className="flex items-center gap-2 mb-2 text-slate-400">
-                    <MapPin size={10} />
-                    <span className="text-[8px] font-black uppercase tracking-widest">Geospatial_Node</span>
-                </div>
-                
-                <div className="space-y-1">
-                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Building_Tower</label>
-                  <input type="text" value={formData.address.building} onChange={e => handleAddressChange('building', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" placeholder="e.g. SMA Plaza, 4th Floor" />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Street_Entry</label>
-                  <input type="text" value={formData.address.street} onChange={e => handleAddressChange('street', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" placeholder="e.g. Loita Street" />
-                </div>
-
+                <div className="flex items-center gap-2 mb-2 text-slate-400"><MapPin size={10} /><span className="text-[8px] font-black uppercase tracking-widest">Geospatial_Node</span></div>
+                <input type="text" placeholder="Building/Tower" value={formData.address.building} onChange={e => handleAddressChange('building', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" />
+                <input type="text" placeholder="Street" value={formData.address.street} onChange={e => handleAddressChange('street', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" />
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">City_Hub</label>
-                    <input type="text" value={formData.address.city} onChange={e => handleAddressChange('city', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" placeholder="Nairobi" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Postal_Code</label>
-                    <input type="text" value={formData.address.postalCode} onChange={e => handleAddressChange('postalCode', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" placeholder="00100" />
-                  </div>
+                  <input type="text" placeholder="City" value={formData.address.city} onChange={e => handleAddressChange('city', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" />
+                  <input type="text" placeholder="Postal Code" value={formData.address.postalCode} onChange={e => handleAddressChange('postalCode', e.target.value)} className="w-full bg-white border-slate-200 p-2.5 rounded-lg text-[9px] font-bold outline-none border" />
                 </div>
               </div>
 
-              {/* FISCAL_NODE */}
               <div className="p-5 bg-slate-900 rounded-2xl space-y-6 shadow-xl">
                 <div className="space-y-1">
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Fiscal_Identifier_KRA</label>
-                  <input type="text" value={formData.kraPin} onChange={e => setFormData({...formData, kraPin: e.target.value.toUpperCase()})} className="w-full bg-white/5 border border-white/5 p-3 rounded-lg text-[10px] font-black outline-none text-white focus:bg-white/10 uppercase" placeholder="REQUIRED_FIELD" />
+                  <input type="text" value={formData.kraPin} onChange={e => setFormData({...formData, kraPin: e.target.value.toUpperCase()})} className="w-full bg-white/5 border border-white/5 p-3 rounded-lg text-[10px] font-black outline-none text-white focus:bg-white/10 uppercase" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                   <div className="space-y-1">
-                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Base_Currency</label>
-                      <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})} className="w-full bg-white/5 border-none p-2.5 rounded-lg text-[9px] font-black text-white outline-none">
-                        <option value="KES" className="text-black">KES (Sh)</option>
-                        <option value="USD" className="text-black">USD ($)</option>
-                      </select>
-                   </div>
-                   <div className="space-y-1">
-                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Status</label>
-                      <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full bg-white/5 border-none p-2.5 rounded-lg text-[9px] font-black text-white outline-none">
-                        <option value="Active" className="text-black">Active</option>
-                        <option value="Archived" className="text-black">Archived</option>
-                      </select>
-                   </div>
+                   <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})} className="w-full bg-white/5 border-none p-2.5 rounded-lg text-[9px] font-black text-white outline-none">
+                     <option value="KES" className="text-black">KES (Sh)</option>
+                     <option value="USD" className="text-black">USD ($)</option>
+                   </select>
+                   <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full bg-white/5 border-none p-2.5 rounded-lg text-[9px] font-black text-white outline-none">
+                     <option value="Active" className="text-black">Active</option>
+                     <option value="Archived" className="text-black">Archived</option>
+                   </select>
                 </div>
               </div>
 
-              <div className="space-y-4 pt-4 border-t border-slate-100">
-                <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-[0.4em] shadow-xl shadow-indigo-100 hover:bg-slate-900 transition-all flex items-center justify-center gap-2 active:scale-95">
-                    <Save size={16} strokeWidth={3}/> Execute_Sync
-                </button>
-              </div>
+              <button type="submit" disabled={clientMutation.isPending} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-[0.4em] shadow-xl hover:bg-slate-900 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
+                  <Save size={16}/> {clientMutation.isPending ? 'SYNCHRONIZING...' : 'Execute_Sync'}
+              </button>
             </form>
           </div>
         </div>

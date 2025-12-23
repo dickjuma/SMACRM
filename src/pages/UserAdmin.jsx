@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { 
   UserPlus, Trash2, ShieldCheck, Database, 
@@ -17,31 +18,29 @@ api.interceptors.request.use((config) => {
 });
 
 const UserAdmin = () => {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "user" });
   const [editingId, setEditingId] = useState(null);
   const [editRole, setEditRole] = useState("");
 
-  const handleSystemError = (error, fallbackMessage) => {
+  // --- ERROR HANDLER ---
+  const handleSystemError = useCallback((error, fallbackMessage) => {
     const status = error.response?.status;
     const message = error.response?.data?.message;
 
     if (status === 401) {
-      toast.error(
-        (t) => (
-          <span className="flex flex-col gap-1">
-            <b className="text-red-400">SESSION_EXPIRED</b>
-            <span className="text-[9px]">Please re-authenticate to gain access.</span>
-            <button 
-              onClick={() => window.location.href = '/login'}
-              className="mt-2 bg-red-500/20 border border-red-500/40 text-red-400 py-1 rounded text-[8px] font-black uppercase"
-            >
-              Re-Login
-            </button>
-          </span>
-        ), { duration: 6000 }
-      );
+      toast.error((t) => (
+        <span className="flex flex-col gap-1">
+          <b className="text-red-400">SESSION_EXPIRED</b>
+          <span className="text-[9px]">Please re-authenticate to gain access.</span>
+          <button 
+            onClick={() => window.location.href = '/login'}
+            className="mt-2 bg-red-500/20 border border-red-500/40 text-red-400 py-1 rounded text-[8px] font-black uppercase"
+          >
+            Re-Login
+          </button>
+        </span>
+      ), { duration: 6000 });
     } else if (status === 403) {
       toast.error("INSUFFICIENT_PRIVILEGES: SuperAdmin clearance required.", {
         icon: <Lock size={14} className="text-red-500" />
@@ -49,85 +48,94 @@ const UserAdmin = () => {
     } else {
       toast.error(message || fallbackMessage);
     }
-  };
-
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await api.get(`${API_URL}/users`);
-      setUsers(response.data.data || response.data);
-    } catch (error) {
-      handleSystemError(error, "REGISTRY_FETCH_FAILED");
-    } finally {
-      setLoading(false);
-    }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  // --- QUERIES ---
+  const { data: users = [], isLoading: loading, refetch: fetchUsers } = useQuery({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const response = await api.get(`${API_URL}/users`);
+      return response.data.data || response.data;
+    },
+    onError: (err) => handleSystemError(err, "REGISTRY_FETCH_FAILED"),
+  });
 
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    if (!newUser.name || !newUser.email || !newUser.password) 
-      return toast.warn("VALIDATION_ERROR: Incomplete identity data.");
-
-    const provisionToast = toast.loading("PROVISIONING_NODE...");
-    try {
-      const response = await api.post(`${API_URL}/register`, newUser);
-      setUsers(prev => [response.data.data, ...prev]);
+  // --- MUTATIONS ---
+  const addUserMutation = useMutation({
+    mutationFn: (user) => api.post(`${API_URL}/register`, user),
+    onMutate: () => toast.loading("PROVISIONING_NODE...", { id: "provision" }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries(["users"]);
       setNewUser({ name: "", email: "", password: "", role: "user" });
-      toast.success(`NODE_ACTIVE: ${newUser.name.toUpperCase()}`, { id: provisionToast });
-    } catch (error) {
-      toast.dismiss(provisionToast);
-      handleSystemError(error, "PROVISIONING_FAILED");
+      toast.success(`NODE_ACTIVE: ${res.data.data.name.toUpperCase()}`, { id: "provision" });
+    },
+    onError: (err) => {
+      toast.dismiss("provision");
+      handleSystemError(err, "PROVISIONING_FAILED");
     }
-  };
+  });
 
-  const toggleStatus = async (user) => {
-    const statusToast = toast.loading("COMMUNICATING_WITH_CORE...");
-    try {
-      const response = await api.patch(`${API_URL}/status/${user._id}`);
-      setUsers(users.map(u => u._id === user._id ? { ...u, active: response.data.active } : u));
-      toast.success(
-        response.data.active ? "ACCESS_RESTORED" : "ACCESS_REVOKED", 
-        { id: statusToast, icon: response.data.active ? <Power size={14}/> : <PowerOff size={14}/> }
-      );
-    } catch (error) {
-      toast.dismiss(statusToast);
-      handleSystemError(error, "STATUS_SYNC_FAILED");
+  const toggleStatusMutation = useMutation({
+    mutationFn: (user) => api.patch(`${API_URL}/status/${user._id}`),
+    onMutate: () => toast.loading("COMMUNICATING_WITH_CORE...", { id: "status" }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries(["users"]);
+      toast.success(res.data.active ? "ACCESS_RESTORED" : "ACCESS_REVOKED", { 
+        id: "status", 
+        icon: res.data.active ? <Power size={14}/> : <PowerOff size={14}/> 
+      });
+    },
+    onError: (err) => {
+      toast.dismiss("status");
+      handleSystemError(err, "STATUS_SYNC_FAILED");
     }
-  };
+  });
 
-  const saveRole = async (id) => {
-    const roleToast = toast.loading("UPDATING_PRIVILEGES...");
-    try {
-      const response = await api.patch(`${API_URL}/role/${id}`, { role: editRole });
-      setUsers(users.map(u => u._id === id ? { ...u, role: response.data.data.role } : u));
+  const saveRoleMutation = useMutation({
+    mutationFn: ({ id, role }) => api.patch(`${API_URL}/role/${id}`, { role }),
+    onMutate: () => toast.loading("UPDATING_PRIVILEGES...", { id: "role" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(["users"]);
       setEditingId(null);
-      toast.success("PRIVILEGE_LEVEL_SYNCED", { id: roleToast });
-    } catch (error) {
-      toast.dismiss(roleToast);
-      handleSystemError(error, "ROLE_UPDATE_FAILED");
+      toast.success("PRIVILEGE_LEVEL_SYNCED", { id: "role" });
+    },
+    onError: (err) => {
+      toast.dismiss("role");
+      handleSystemError(err, "ROLE_UPDATE_FAILED");
     }
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (id) => api.delete(`${API_URL}/purge/${id}`),
+    onMutate: () => toast.loading("PURGING...", { id: "purge" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(["users"]);
+      toast.success("NODE_DELETED", { id: "purge" });
+    },
+    onError: (err) => {
+      toast.dismiss("purge");
+      handleSystemError(err, "PURGE_FAILED");
+    }
+  });
+
+  // --- HANDLERS ---
+  const handleAddUser = (e) => {
+    e.preventDefault();
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      return toast("VALIDATION_ERROR: Incomplete data", { 
+        icon: <AlertTriangle size={14} className="text-amber-500" /> 
+      });
+    }
+    addUserMutation.mutate(newUser);
   };
 
-  const deleteUser = async (id, name) => {
+  const deleteUserConfirm = (id, name) => {
     toast((t) => (
       <div className="flex flex-col gap-2">
         <p className="text-[10px] font-bold text-white">CONFIRM_PURGE: {name}?</p>
         <div className="flex gap-2">
           <button 
-            onClick={async () => {
-              toast.dismiss(t.id);
-              const pToast = toast.loading("PURGING...");
-              try {
-                await api.delete(`${API_URL}/purge/${id}`);
-                setUsers(users.filter(u => u._id !== id));
-                toast.success("NODE_DELETED", { id: pToast });
-              } catch (e) {
-                toast.dismiss(pToast);
-                handleSystemError(e, "PURGE_FAILED");
-              }
-            }}
+            onClick={() => { toast.dismiss(t.id); deleteUserMutation.mutate(id); }}
             className="bg-red-500 px-2 py-1 rounded text-[8px] font-black uppercase text-white"
           >
             Confirm
@@ -143,20 +151,12 @@ const UserAdmin = () => {
       <Toaster 
         position="top-right" 
         toastOptions={{ 
-          style: { 
-            background: '#1e293b', 
-            color: '#fff', 
-            fontSize: '10px', 
-            border: '1px solid #334155',
-            borderRadius: '4px',
-            padding: '12px',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
-          }
+          style: { background: '#1e293b', color: '#fff', fontSize: '10px', border: '1px solid #334155', borderRadius: '4px', padding: '12px' }
         }} 
       />
       
       <div className="max-w-5xl mx-auto space-y-6">
-        {/* HEADER WITH REFRESH BUTTON */}
+        {/* HEADER */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-6">
             <div>
                 <h1 className="text-xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
@@ -166,12 +166,10 @@ const UserAdmin = () => {
             </div>
             
             <div className="flex items-center gap-2">
-                {/* --- ADDED REFRESH BUTTON --- */}
                 <button 
-                  onClick={fetchUsers}
+                  onClick={() => fetchUsers()}
                   disabled={loading}
-                  className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white hover:border-slate-500 transition-all active:scale-95 disabled:opacity-50"
-                  title="Re-Sync Registry"
+                  className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-all active:scale-95 disabled:opacity-50"
                 >
                   <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 </button>
@@ -264,7 +262,7 @@ const UserAdmin = () => {
                     <div className="flex items-center justify-end gap-2">
                       {editingId === u._id ? (
                         <>
-                          <button onClick={() => saveRole(u._id)} className="p-2 text-emerald-500 hover:bg-emerald-500/10 rounded border border-emerald-500/20"><Save size={14}/></button>
+                          <button onClick={() => saveRoleMutation.mutate({ id: u._id, role: editRole })} className="p-2 text-emerald-500 hover:bg-emerald-500/10 rounded border border-emerald-500/20"><Save size={14}/></button>
                           <button onClick={() => setEditingId(null)} className="p-2 text-slate-500 hover:bg-slate-500/10 rounded"><X size={14}/></button>
                         </>
                       ) : (
@@ -272,13 +270,13 @@ const UserAdmin = () => {
                       )}
                       
                       <button 
-                        onClick={() => toggleStatus(u)}
+                        onClick={() => toggleStatusMutation.mutate(u)}
                         className={`p-2 transition-all rounded ${u.active ? 'text-slate-500 hover:bg-amber-500/10 hover:text-amber-500' : 'text-amber-500 hover:bg-emerald-500/10 hover:text-emerald-500'}`}
                       >
                         {u.active ? <PowerOff size={14} /> : <Power size={14} />}
                       </button>
 
-                      <button onClick={() => deleteUser(u._id, u.name)} className="p-2 text-slate-700 hover:text-red-500 hover:bg-red-500/10 transition-all rounded"><Trash2 size={14}/></button>
+                      <button onClick={() => deleteUserConfirm(u._id, u.name)} className="p-2 text-slate-700 hover:text-red-500 hover:bg-red-500/10 transition-all rounded"><Trash2 size={14}/></button>
                     </div>
                   </td>
                 </tr>
@@ -289,7 +287,7 @@ const UserAdmin = () => {
             <div className="p-10 text-center flex flex-col items-center gap-3">
               <Database size={24} className="text-slate-700" />
               <p className="text-[10px] uppercase font-bold text-slate-600 tracking-widest">No Identity Nodes Found In Registry</p>
-              <button onClick={fetchUsers} className="text-[8px] font-black text-emerald-500 uppercase border border-emerald-500/20 px-3 py-1 rounded hover:bg-emerald-500/10 transition-all">Re-Sync Database</button>
+              <button onClick={() => fetchUsers()} className="text-[8px] font-black text-emerald-500 uppercase border border-emerald-500/20 px-3 py-1 rounded hover:bg-emerald-500/10 transition-all">Re-Sync Database</button>
             </div>
           )}
         </div>

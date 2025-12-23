@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -15,29 +16,18 @@ const CLIENTS_API_URL = "http://localhost:5000/api/clients";
 
 // --- AUTHENTICATION LOGIC ---
 const api = axios.create();
-
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 }, (error) => Promise.reject(error));
 
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      toast.error("Session expired. Please login again.");
-      // Optional: window.location.href = "/login";
-    }
-    return Promise.reject(error);
-  }
-);
+// --- API FUNCTIONS ---
+const fetchInvoices = async () => (await api.get(API_URL)).data;
+const fetchClients = async () => (await api.get(CLIENTS_API_URL)).data;
 
 const Invoices = () => {
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -48,90 +38,63 @@ const Invoices = () => {
     content: () => printRef.current,
   });
 
-  const fetchInvoices = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await api.get(API_URL);
-      setInvoices(response.data);
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Network sync failed");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // --- QUERIES ---
+  const { data: invoices = [], isLoading, isFetching, refetch } = useQuery({
+    queryKey: ["invoices"],
+    queryFn: fetchInvoices,
+    onError: (err) => toast.error(err.response?.data?.message || "Sync failed"),
+  });
 
-  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+  // --- MUTATIONS ---
+  const saveMutation = useMutation({
+    mutationFn: (data) => {
+      const payload = { ...data, client: data.client?._id || data.client };
+      return data._id ? api.put(`${API_URL}/${data._id}`, payload) : api.post(API_URL, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(["invoices"]);
+      toast.success("Ledger Updated");
+      setEditing(null); setAdding(false);
+    },
+    onError: () => toast.error("Processing failed"),
+  });
 
-  const toggleStatus = async (invoice) => {
-    const newStatus = invoice.status === "Paid" ? "Not Paid" : "Paid";
-    const toastId = toast.loading(`Updating status to ${newStatus}...`);
-    
-    try {
-      const payload = { 
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`${API_URL}/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries(["invoices"]);
+      toast.success("Entry Purged");
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (invoice) => {
+      const newStatus = invoice.status === "Paid" ? "Not Paid" : "Paid";
+      return api.put(`${API_URL}/${invoice._id}`, { 
         ...invoice, 
         status: newStatus,
         client: invoice.client?._id || invoice.client 
-      };
-      
-      await api.put(`${API_URL}/${invoice._id}`, payload);
-      setInvoices(prev => prev.map(inv => inv._id === invoice._id ? { ...inv, status: newStatus } : inv));
-      toast.success(`Marked as ${newStatus}`, { id: toastId });
-    } catch (error) {
-      toast.error("Status update failed", { id: toastId });
-    }
-  };
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries(["invoices"]),
+    onMutate: () => toast.loading("Updating status...", { id: "status" }),
+    onSettled: () => toast.dismiss("status"),
+  });
 
   const downloadPDF = async (invoice) => {
     const toastId = toast.loading("Generating High-Res PDF...");
     try {
       const element = printRef.current;
-      const canvas = await html2canvas(element, { 
-        scale: 3, 
-        useCORS: true,
-        logging: false
-      });
+      const canvas = await html2canvas(element, { scale: 3, useCORS: true });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
       pdf.save(`SMA_INV_${invoice._id.slice(-6).toUpperCase()}.pdf`);
       toast.success("PDF Downloaded", { id: toastId });
     } catch (error) {
-      toast.error("PDF Export failed", { id: toastId });
-    }
-  };
-
-  const handleSave = async (invoiceData) => {
-    const isEdit = invoiceData._id;
-    const toastId = toast.loading("Processing...");
-    try {
-      const payload = { ...invoiceData, client: invoiceData.client?._id || invoiceData.client };
-      const response = await (isEdit 
-        ? api.put(`${API_URL}/${isEdit}`, payload)
-        : api.post(API_URL, payload));
-      
-      if (isEdit) {
-        setInvoices(invoices.map(inv => (inv._id === response.data._id ? response.data : inv)));
-        toast.success("Updated", { id: toastId });
-      } else {
-        setInvoices([response.data, ...invoices]);
-        toast.success("Created", { id: toastId });
-      }
-      setEditing(null); setAdding(false);
-    } catch (error) {
-      toast.error("Save failed", { id: toastId });
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm("Confirm delete?")) {
-      try {
-        await api.delete(`${API_URL}/${id}`);
-        setInvoices(invoices.filter(inv => inv._id !== id));
-        toast.success("Deleted");
-      } catch (error) { toast.error("Delete failed"); }
+      toast.error("Export failed", { id: toastId });
     }
   };
 
@@ -166,8 +129,8 @@ const Invoices = () => {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <button onClick={fetchInvoices} className="p-2.5 border bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-sm">
-              <RefreshCw className={`w-4 h-4 text-slate-500 ${loading ? 'animate-spin' : ''}`} />
+            <button onClick={() => refetch()} className="p-2.5 border bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-sm">
+              <RefreshCw className={`w-4 h-4 text-slate-500 ${isFetching ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={() => setAdding(true)} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-black text-[10px] flex items-center gap-2 uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-slate-900/20">
               <Plus className="w-4 h-4"/> New Entry
@@ -178,153 +141,70 @@ const Invoices = () => {
 
       <main className="flex-1 overflow-auto p-8 custom-scrollbar">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50/50 backdrop-blur sticky top-0 z-10 border-b border-slate-200">
-                <tr className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">
-                  <th className="px-6 py-5">Recipient_Account</th>
-                  <th className="px-6 py-5">Date_Logged</th>
-                  <th className="px-6 py-5 text-right">Settlement_Amount</th>
-                  <th className="px-6 py-5 text-center">Status</th>
-                  <th className="px-6 py-5 text-right">Management</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredInvoices.map((inv) => (
-                  <tr key={inv._id} className="hover:bg-slate-50/80 transition-colors group">
-                    <td className="px-6 py-4">
-                      <p className="font-black text-slate-900 uppercase italic tracking-tighter text-[11px]">{inv.client?.name}</p>
-                      <p className="text-[8px] text-slate-400 font-mono">REF_{inv._id.slice(-6).toUpperCase()}</p>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 font-mono">{inv.date}</td>
-                    <td className="px-6 py-4 text-right font-black">
-                      <span className="text-[9px] text-slate-300 mr-1 font-normal">{inv.currency}</span>
-                      {inv.items.reduce((a, b) => a + b.total, 0).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => toggleStatus(inv)} className="group/btn relative outline-none">
-                        <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-[0.1em] flex items-center gap-1.5 transition-all active:scale-95 ${
-                          inv.status === "Paid" 
-                            ? "bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200" 
-                            : "bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200"
-                        }`}>
-                          {inv.status === "Paid" ? <CheckCircle2 className="w-2.5 h-2.5"/> : <AlertCircle className="w-2.5 h-2.5"/>}
-                          {inv.status}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => setViewing(inv)} className="p-2 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"><Eye className="w-4 h-4"/></button>
-                        <button onClick={() => downloadPDF(inv)} className="p-2 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors"><Download className="w-4 h-4"/></button>
-                        <button onClick={() => setEditing(inv)} className="p-2 hover:bg-slate-100 hover:text-slate-900 rounded-lg transition-colors"><Edit className="w-4 h-4"/></button>
-                        <button onClick={() => handleDelete(inv._id)} className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
-                      </div>
-                    </td>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64 text-slate-400 font-black uppercase tracking-widest animate-pulse">
+              Initialising Ledger Stream...
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50/50 backdrop-blur sticky top-0 z-10 border-b border-slate-200">
+                  <tr className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">
+                    <th className="px-6 py-5">Recipient_Account</th>
+                    <th className="px-6 py-5">Date_Logged</th>
+                    <th className="px-6 py-5 text-right">Settlement_Amount</th>
+                    <th className="px-6 py-5 text-center">Status</th>
+                    <th className="px-6 py-5 text-right">Management</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredInvoices.map((inv) => (
+                    <tr key={inv._id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="px-6 py-4">
+                        <p className="font-black text-slate-900 uppercase italic tracking-tighter text-[11px]">{inv.client?.name}</p>
+                        <p className="text-[8px] text-slate-400 font-mono">REF_{inv._id.slice(-6).toUpperCase()}</p>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 font-mono">{inv.date}</td>
+                      <td className="px-6 py-4 text-right font-black">
+                        <span className="text-[9px] text-slate-300 mr-1 font-normal">{inv.currency}</span>
+                        {inv.items.reduce((a, b) => a + b.total, 0).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <button onClick={() => statusMutation.mutate(inv)} className="group/btn relative outline-none">
+                          <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-[0.1em] flex items-center gap-1.5 transition-all active:scale-95 ${
+                            inv.status === "Paid" 
+                              ? "bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200" 
+                              : "bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200"
+                          }`}>
+                            {inv.status === "Paid" ? <CheckCircle2 className="w-2.5 h-2.5"/> : <AlertCircle className="w-2.5 h-2.5"/>}
+                            {inv.status}
+                          </span>
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setViewing(inv)} className="p-2 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"><Eye className="w-4 h-4"/></button>
+                          <button onClick={() => downloadPDF(inv)} className="p-2 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors"><Download className="w-4 h-4"/></button>
+                          <button onClick={() => setEditing(inv)} className="p-2 hover:bg-slate-100 hover:text-slate-900 rounded-lg transition-colors"><Edit className="w-4 h-4"/></button>
+                          <button onClick={() => {if(window.confirm("Purge Entry?")) deleteMutation.mutate(inv._id)}} className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </main>
 
       {viewing && <InvoiceViewModal invoice={viewing} ref={printRef} onClose={() => setViewing(null)} onPrint={handlePrintTrigger} onDownload={() => downloadPDF(viewing)} />}
-      {(editing || adding) && <AddEditModal invoice={editing} onSave={handleSave} onClose={() => {setEditing(null); setAdding(false);}} />}
+      {(editing || adding) && <AddEditModal invoice={editing} onSave={(data) => saveMutation.mutate(data)} onClose={() => {setEditing(null); setAdding(false);}} />}
     </div>
   );
 };
 
-// --- VIEW MODAL ---
-const InvoiceViewModal = React.forwardRef(({ invoice, onClose, onPrint, onDownload }, ref) => {
-  const total = invoice.items.reduce((acc, i) => acc + i.total, 0);
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-2xl shadow-2xl rounded-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
-        <div className="flex-1 overflow-y-auto p-0" ref={ref}>
-          <div className="bg-slate-900 p-10 text-white flex justify-between items-center relative overflow-hidden">
-            <div className="z-10">
-              <h2 className="text-3xl font-black tracking-tighter mb-1">SMA_SYSTEMS</h2>
-              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em]">Official Transaction Record</p>
-            </div>
-            <div className="text-right z-10 text-[9px] font-bold text-slate-300">
-                <span className="flex items-center justify-end gap-2"><MapPin className="w-3 h-3"/> 123 Business Way, Nairobi, KE</span>
-                <span className="flex items-center justify-end gap-2"><Globe className="w-3 h-3"/> www.smasystems.com</span>
-                <span className="flex items-center justify-end gap-2"><Mail className="w-3 h-3"/> finance@smasystems.com</span>
-            </div>
-          </div>
-
-          <div className="p-12 relative">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-[-15deg] pointer-events-none opacity-[0.03]">
-              <h1 className="text-[120px] font-black uppercase">{invoice.status}</h1>
-            </div>
-
-            <div className="flex justify-between items-start mb-16">
-              <div>
-                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4">Billed_To</p>
-                <p className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">{invoice.client?.name}</p>
-                <p className="text-[11px] text-slate-500 font-medium mt-1">{invoice.client?.email || "Account Holder"}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-2">Invoice_Details</p>
-                <p className="text-xs font-mono font-bold text-slate-900">ID: #{invoice._id.slice(-8).toUpperCase()}</p>
-                <p className="text-xs font-mono font-bold text-slate-900">DATE: {invoice.date}</p>
-                <div className={`mt-3 inline-block px-3 py-1 rounded-md text-[9px] font-black uppercase border ${
-                  invoice.status === 'Paid' ? 'border-emerald-200 text-emerald-600' : 'border-amber-200 text-amber-600'
-                }`}>
-                  Status: {invoice.status}
-                </div>
-              </div>
-            </div>
-
-            <table className="w-full text-[12px] mb-12">
-              <thead>
-                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b-2 border-slate-900">
-                  <th className="py-4 text-left">Service_Description</th>
-                  <th className="py-4 text-center w-24">Qty</th>
-                  <th className="py-4 text-right w-32">Line_Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 border-b-2 border-slate-900">
-                {invoice.items.map((item, i) => (
-                  <tr key={i}>
-                    <td className="py-5 font-bold text-slate-800 uppercase tracking-tight">{item.description}</td>
-                    <td className="py-5 text-center text-slate-500 font-mono italic">x{item.quantity}</td>
-                    <td className="py-5 text-right font-black text-slate-900 tracking-tighter">
-                      <span className="text-[10px] text-slate-300 mr-2">{invoice.currency}</span>
-                      {item.total.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan="2" className="pt-10 pb-2 text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 text-right pr-10">Grand_Total_Due</td>
-                  <td className="pt-10 pb-2 text-right text-3xl font-black text-slate-900 tracking-tighter">
-                    <span className="text-xs font-normal mr-2">{invoice.currency}</span>
-                    {total.toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-        
-        <div className="bg-white px-8 py-5 flex justify-end gap-3 border-t border-slate-100 shrink-0">
-          <button onClick={onPrint} className="px-5 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 hover:bg-slate-50 transition-all">
-            <Printer className="w-4 h-4"/> Hardcopy
-          </button>
-          <button onClick={onDownload} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase flex items-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
-            <Download className="w-4 h-4"/> Download PDF
-          </button>
-          <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 text-slate-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200">Dismiss</button>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// --- ADD/EDIT MODAL ---
+// --- ADD/EDIT MODAL (Refactored for TanStack) ---
 const AddEditModal = ({ invoice, onSave, onClose }) => {
   const [inv, setInv] = useState(invoice || {
     client: null, 
@@ -336,22 +216,18 @@ const AddEditModal = ({ invoice, onSave, onClose }) => {
   });
 
   const [clientSearch, setClientSearch] = useState(invoice?.client?.name || "");
-  const [clientList, setClientList] = useState([]);
   const [showLookup, setShowLookup] = useState(false);
 
-  const currencies = [
-    { code: "USD", symbol: "$" },
-    { code: "KES", symbol: "KSh" },
-    { code: "EUR", symbol: "€" },
-    { code: "GBP", symbol: "£" },
-    { code: "UGX", symbol: "USh" },
-    { code: "TZS", symbol: "TSh" }
-  ];
+  // Fetch clients using TanStack Query
+  const { data: clientList = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: fetchClients
+  });
 
-  useEffect(() => {
-    // Using authenticated api instance
-    api.get(CLIENTS_API_URL).then(res => setClientList(res.data)).catch(() => toast.error("Client fetch error"));
-  }, []);
+  const currencies = [
+    { code: "USD", symbol: "$" }, { code: "KES", symbol: "KSh" }, { code: "EUR", symbol: "€" },
+    { code: "GBP", symbol: "£" }, { code: "UGX", symbol: "USh" }, { code: "TZS", symbol: "TSh" }
+  ];
 
   const updateItem = (idx, field, val) => {
     const items = [...inv.items];
@@ -471,5 +347,94 @@ const AddEditModal = ({ invoice, onSave, onClose }) => {
     </div>
   );
 };
+
+// --- INVOICE VIEW MODAL ---
+const InvoiceViewModal = React.forwardRef(({ invoice, onClose, onPrint, onDownload }, ref) => {
+  const total = invoice.items.reduce((acc, i) => acc + i.total, 0);
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+      <div className="bg-white w-full max-w-2xl shadow-2xl rounded-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="flex-1 overflow-y-auto p-0" ref={ref}>
+          <div className="bg-slate-900 p-10 text-white flex justify-between items-center relative overflow-hidden">
+            <div className="z-10">
+              <h2 className="text-3xl font-black tracking-tighter mb-1">SMA_SYSTEMS</h2>
+              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em]">Official Transaction Record</p>
+            </div>
+            <div className="text-right z-10 text-[9px] font-bold text-slate-300">
+                <span className="flex items-center justify-end gap-2"><MapPin className="w-3 h-3"/> 123 Business Way, Nairobi, KE</span>
+                <span className="flex items-center justify-end gap-2"><Globe className="w-3 h-3"/> www.smasystems.com</span>
+                <span className="flex items-center justify-end gap-2"><Mail className="w-3 h-3"/> finance@smasystems.com</span>
+            </div>
+          </div>
+
+          <div className="p-12 relative">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-[-15deg] pointer-events-none opacity-[0.03]">
+              <h1 className="text-[120px] font-black uppercase">{invoice.status}</h1>
+            </div>
+
+            <div className="flex justify-between items-start mb-16">
+              <div>
+                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4">Billed_To</p>
+                <p className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">{invoice.client?.name}</p>
+                <p className="text-[11px] text-slate-500 font-medium mt-1">{invoice.client?.email || "Account Holder"}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-2">Invoice_Details</p>
+                <p className="text-xs font-mono font-bold text-slate-900">ID: #{invoice._id.slice(-8).toUpperCase()}</p>
+                <p className="text-xs font-mono font-bold text-slate-900">DATE: {invoice.date}</p>
+                <div className={`mt-3 inline-block px-3 py-1 rounded-md text-[9px] font-black uppercase border ${
+                  invoice.status === 'Paid' ? 'border-emerald-200 text-emerald-600' : 'border-amber-200 text-amber-600'
+                }`}>
+                  Status: {invoice.status}
+                </div>
+              </div>
+            </div>
+
+            <table className="w-full text-[12px] mb-12">
+              <thead>
+                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b-2 border-slate-900">
+                  <th className="py-4 text-left">Service_Description</th>
+                  <th className="py-4 text-center w-24">Qty</th>
+                  <th className="py-4 text-right w-32">Line_Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 border-b-2 border-slate-900">
+                {invoice.items.map((item, i) => (
+                  <tr key={i}>
+                    <td className="py-5 font-bold text-slate-800 uppercase tracking-tight">{item.description}</td>
+                    <td className="py-5 text-center text-slate-500 font-mono italic">x{item.quantity}</td>
+                    <td className="py-5 text-right font-black text-slate-900 tracking-tighter">
+                      <span className="text-[10px] text-slate-300 mr-2">{invoice.currency}</span>
+                      {item.total.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan="2" className="pt-10 pb-2 text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 text-right pr-10">Grand_Total_Due</td>
+                  <td className="pt-10 pb-2 text-right text-3xl font-black text-slate-900 tracking-tighter">
+                    <span className="text-xs font-normal mr-2">{invoice.currency}</span>
+                    {total.toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+        
+        <div className="bg-white px-8 py-5 flex justify-end gap-3 border-t border-slate-100 shrink-0">
+          <button onClick={onPrint} className="px-5 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 hover:bg-slate-50 transition-all">
+            <Printer className="w-4 h-4"/> Hardcopy
+          </button>
+          <button onClick={onDownload} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase flex items-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
+            <Download className="w-4 h-4"/> Download PDF
+          </button>
+          <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 text-slate-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export default Invoices;
