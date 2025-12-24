@@ -20,8 +20,7 @@ const Login = () => {
       const response = await fetch(`${API_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // credentials: "include" is only needed if you use HTTP-Only Cookies. 
-        // If it still fails, try commenting this line out.
+        
         credentials: "include", 
         body: JSON.stringify({ email, password }),
       });
