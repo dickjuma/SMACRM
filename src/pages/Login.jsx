@@ -18,12 +18,13 @@ const Login = () => {
 
     try {
       const response = await fetch(`${API_URL}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        
-        credentials: "include", 
-        body: JSON.stringify({ email, password }),
-      });
+  method: "POST",
+  headers: { 
+    "Content-Type": "application/json",
+    "Accept": "application/json" // Good practice to tell server what you expect back
+  },
+  body: JSON.stringify({ email, password }),
+});
 
       const data = await response.json();
       console.log("Auth Response Received:", data); // DEBUG LOG
