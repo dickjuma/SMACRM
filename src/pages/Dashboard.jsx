@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { 
   Users, FileText, FileCheck, CreditCard, 
-  RefreshCcw, ArrowUpRight, ShieldCheck, Activity, BarChart3, TrendingUp 
+  RefreshCcw, ArrowUpRight, ShieldCheck, Activity, BarChart3
 } from "lucide-react";
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, BarChart, Bar, Cell 
+  ResponsiveContainer, BarChart, Bar, Cell, CartesianGrid, XAxis, YAxis, Tooltip 
 } from 'recharts';
 
-// --- 1. API CONFIGURATION ---
+
 const api = axios.create({
   baseURL: process.env.REACT_APP_BACKEND_URL,
 });
@@ -22,25 +21,52 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      localStorage.removeItem("token");
+      window.location.href = "/login"; 
+    }
+    return Promise.reject(error);
+  }
+);
+
 const fetchDashboardStats = async () => {
   const { data } = await api.get("/dashboard/stats");
   return data;
 };
 
-// --- 2. MAIN COMPONENT ---
 const Dashboard = () => {
-  const [lastSync, setLastSync] = useState("");
 
+  const [lastSync, setLastSync] = useState("");
+  const [tokenChecked, setTokenChecked] = useState(false); // for token guard
+
+  const token = localStorage.getItem("token");
+
+  
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["dashboardStats"],
     queryFn: fetchDashboardStats,
+    enabled: !!token,
   });
 
+  // Set lastSync when data changes
   useEffect(() => {
     if (data) setLastSync(new Date().toLocaleTimeString());
   }, [data]);
 
-  // Data for Comparison Bar Chart
+  // ✅ Check token after hooks
+  useEffect(() => {
+    setTokenChecked(true);
+  }, []);
+
+  if (!token && tokenChecked) {
+    // Redirect without ever skipping hooks
+    return <Navigate to="/login" replace />;
+  }
+
+  // --- Prepare charts/cards ---
   const comparisonData = [
     { name: 'Clients', value: data?.clients || 0, color: '#3B82F6' },
     { name: 'Quotes', value: data?.quotations || 0, color: '#10B981' },
@@ -55,6 +81,7 @@ const Dashboard = () => {
     { id: 4, label: "Receipts", val: data?.receipts || 0, icon: <CreditCard />, color: "text-indigo-600", bg: "bg-indigo-50", link: "/receipts" },
   ];
 
+  // --- Render ---
   return (
     <div className="flex flex-col h-screen bg-[#F8FAFC] overflow-hidden font-sans">
       {/* Header */}
@@ -80,7 +107,6 @@ const Dashboard = () => {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-7xl mx-auto space-y-8">
-          
           {/* Top Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {cards.map((card) => (
@@ -125,7 +151,7 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* System Status / Log */}
+            {/* System Status */}
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl shadow-indigo-100 relative overflow-hidden">
               <div className="relative z-10 h-full flex flex-col justify-between">
                 <div>
@@ -146,7 +172,9 @@ const Dashboard = () => {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-slate-400">Powered by</span>
-                      <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-[10px] font-black border border-indigo-500/30 uppercase">SMA SYSTEMS</span>
+                      <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-[10px] font-black border border-indigo-500/30 uppercase">
+                        SMA SYSTEMS
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -154,7 +182,6 @@ const Dashboard = () => {
                   SYSTEM_DASHBOARD_V4: Connection established via encrypted tunnel. All ledger endpoints verified.
                 </div>
               </div>
-              {/* Background Glow */}
               <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px]" />
             </div>
           </div>
