@@ -1,14 +1,14 @@
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { 
   UserPlus, Trash2, ShieldCheck, Database, 
-  Edit2, Save, X, Power, PowerOff, Activity,
-  Lock, AlertTriangle, RefreshCw
+  Edit2, Save, X, Power, PowerOff, 
+  RefreshCw, Mail, AlertCircle, Check
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-const BASE_URL= process.env.REACT_APP_BACKEND_URL
 
+const BASE_URL = process.env.REACT_APP_BACKEND_URL;
 const API_URL = `${BASE_URL}/auth`;
 
 const api = axios.create();
@@ -23,33 +23,9 @@ const UserAdmin = () => {
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "user" });
   const [editingId, setEditingId] = useState(null);
   const [editRole, setEditRole] = useState("");
-
-  // --- ERROR HANDLER ---
-  const handleSystemError = useCallback((error, fallbackMessage) => {
-    const status = error.response?.status;
-    const message = error.response?.data?.message;
-
-    if (status === 401) {
-      toast.error((t) => (
-        <span className="flex flex-col gap-1">
-          <b className="text-red-400">SESSION_EXPIRED</b>
-          <span className="text-[9px]">Please re-authenticate to gain access.</span>
-          <button 
-            onClick={() => window.location.href = '/login'}
-            className="mt-2 bg-red-500/20 border border-red-500/40 text-red-400 py-1 rounded text-[8px] font-black uppercase"
-          >
-            Re-Login
-          </button>
-        </span>
-      ), { duration: 6000 });
-    } else if (status === 403) {
-      toast.error("INSUFFICIENT_PRIVILEGES: SuperAdmin clearance required.", {
-        icon: <Lock size={14} className="text-red-500" />
-      });
-    } else {
-      toast.error(message || fallbackMessage);
-    }
-  }, []);
+  
+  // State for inline deletion confirmation
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   // --- QUERIES ---
   const { data: users = [], isLoading: loading, refetch: fetchUsers } = useQuery({
@@ -58,240 +34,253 @@ const UserAdmin = () => {
       const response = await api.get(`${API_URL}/users`);
       return response.data.data || response.data;
     },
-    onError: (err) => handleSystemError(err, "REGISTRY_FETCH_FAILED"),
+    onError: () => toast.error("Critical: Could not sync with user registry")
   });
 
   // --- MUTATIONS ---
   const addUserMutation = useMutation({
     mutationFn: (user) => api.post(`${API_URL}/register`, user),
-    onMutate: () => toast.loading("PROVISIONING_NODE...", { id: "provision" }),
-    onSuccess: (res) => {
+    onSuccess: () => {
       queryClient.invalidateQueries(["users"]);
       setNewUser({ name: "", email: "", password: "", role: "user" });
-      toast.success(`NODE_ACTIVE: ${res.data.data.name.toUpperCase()}`, { id: "provision" });
-    },
-    onError: (err) => {
-      toast.dismiss("provision");
-      handleSystemError(err, "PROVISIONING_FAILED");
     }
   });
 
   const toggleStatusMutation = useMutation({
     mutationFn: (user) => api.patch(`${API_URL}/status/${user._id}`),
-    onMutate: () => toast.loading("COMMUNICATING_WITH_CORE...", { id: "status" }),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries(["users"]);
-      toast.success(res.data.active ? "ACCESS_RESTORED" : "ACCESS_REVOKED", { 
-        id: "status", 
-        icon: res.data.active ? <Power size={14}/> : <PowerOff size={14}/> 
-      });
-    },
-    onError: (err) => {
-      toast.dismiss("status");
-      handleSystemError(err, "STATUS_SYNC_FAILED");
-    }
+    onSuccess: () => queryClient.invalidateQueries(["users"])
   });
 
   const saveRoleMutation = useMutation({
     mutationFn: ({ id, role }) => api.patch(`${API_URL}/role/${id}`, { role }),
-    onMutate: () => toast.loading("UPDATING_PRIVILEGES...", { id: "role" }),
     onSuccess: () => {
       queryClient.invalidateQueries(["users"]);
       setEditingId(null);
-      toast.success("PRIVILEGE_LEVEL_SYNCED", { id: "role" });
-    },
-    onError: (err) => {
-      toast.dismiss("role");
-      handleSystemError(err, "ROLE_UPDATE_FAILED");
     }
   });
 
   const deleteUserMutation = useMutation({
     mutationFn: (id) => api.delete(`${API_URL}/purge/${id}`),
-    onMutate: () => toast.loading("PURGING...", { id: "purge" }),
     onSuccess: () => {
       queryClient.invalidateQueries(["users"]);
-      toast.success("NODE_DELETED", { id: "purge" });
-    },
-    onError: (err) => {
-      toast.dismiss("purge");
-      handleSystemError(err, "PURGE_FAILED");
+      setDeleteConfirmId(null); // Reset after successful deletion
     }
   });
 
   // --- HANDLERS ---
+
   const handleAddUser = (e) => {
     e.preventDefault();
-    if (!newUser.name || !newUser.email || !newUser.password) {
-      return toast("VALIDATION_ERROR: Incomplete data", { 
-        icon: <AlertTriangle size={14} className="text-amber-500" /> 
-      });
-    }
-    addUserMutation.mutate(newUser);
+    toast.promise(
+      addUserMutation.mutateAsync(newUser),
+      {
+        loading: `Provisioning account for ${newUser.name}...`,
+        success: <b>Account created successfully</b>,
+        error: (err) => `Provisioning failed: ${err.response?.data?.message || 'Server error'}`,
+      }
+    );
   };
 
-  const deleteUserConfirm = (id, name) => {
-    toast((t) => (
-      <div className="flex flex-col gap-2">
-        <p className="text-[10px] font-bold text-white">CONFIRM_PURGE: {name}?</p>
-        <div className="flex gap-2">
-          <button 
-            onClick={() => { toast.dismiss(t.id); deleteUserMutation.mutate(id); }}
-            className="bg-red-500 px-2 py-1 rounded text-[8px] font-black uppercase text-white"
-          >
-            Confirm
-          </button>
-          <button onClick={() => toast.dismiss(t.id)} className="bg-slate-700 px-2 py-1 rounded text-[8px] font-black uppercase text-white">Cancel</button>
-        </div>
-      </div>
-    ), { duration: 5000, icon: <AlertTriangle className="text-amber-500" /> });
+  const handleStatusToggle = (user) => {
+    const action = user.active ? "Suspending" : "Activating";
+    toast.promise(
+      toggleStatusMutation.mutateAsync(user),
+      {
+        loading: `${action} access for ${user.name}...`,
+        success: `User status updated`,
+        error: `Failed to update status`,
+      }
+    );
+  };
+
+  const handleRoleUpdate = (id, name) => {
+    toast.promise(
+      saveRoleMutation.mutateAsync({ id, role: editRole }),
+      {
+        loading: `Updating permissions...`,
+        success: `Role updated to ${editRole.toUpperCase()}`,
+        error: `Could not update permissions`,
+      }
+    );
+  };
+
+  const executeDeletion = (id) => {
+    toast.promise(deleteUserMutation.mutateAsync(id), {
+      loading: 'Purging record...',
+      success: 'User purged from system',
+      error: 'Purge failed',
+    });
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] p-8 text-slate-300 font-sans antialiased">
+    <div className="min-h-screen bg-slate-50/50 text-slate-900 font-sans antialiased">
       <Toaster 
-        position="top-right" 
-        toastOptions={{ 
-          style: { background: '#1e293b', color: '#fff', fontSize: '10px', border: '1px solid #334155', borderRadius: '4px', padding: '12px' }
+        position="top-right"
+        toastOptions={{
+          className: 'border border-slate-200 shadow-xl p-4 text-sm font-medium rounded-2xl',
+          duration: 4000,
         }} 
       />
       
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* HEADER */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-6">
-            <div>
-                <h1 className="text-xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
-                  <ShieldCheck className="text-emerald-500" /> Identity_Management
-                </h1>
-                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em]">Secure_Node_Administration_v2.0</p>
+      <div className="max-w-6xl mx-auto p-6 md:p-10 space-y-8">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-widest">
+              <ShieldCheck size={14} /> Security Admin
             </div>
-            
-            <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => fetchUsers()}
-                  disabled={loading}
-                  className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-all active:scale-95 disabled:opacity-50"
-                >
-                  <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                </button>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Access Control</h1>
+          </div>
+          
+          <button 
+            onClick={() => {
+              toast.promise(fetchUsers(), {
+                loading: 'Refreshing registry...',
+                success: 'Data up to date',
+                error: 'Refresh failed'
+              });
+            }}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 hover:text-indigo-600 rounded-xl transition-all shadow-sm font-semibold text-sm"
+          >
+            <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+            Sync Registry
+          </button>
+        </header>
 
-                <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-lg flex items-center gap-3">
-                    <Activity size={14} className={loading ? "animate-spin text-emerald-500" : "text-emerald-500"}/>
-                    <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">
-                      {loading ? "SYNCING_DATA" : "System_Live"}
-                    </span>
-                </div>
+        {/* ADD USER SECTION */}
+        <section className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/30">
+            <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+              <UserPlus size={18} className="text-indigo-600" /> Provision New Account
+            </h2>
+          </div>
+          <form onSubmit={handleAddUser} className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Full Name</label>
+              <input 
+                placeholder="John Wekesa" value={newUser.name} 
+                onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" required
+              />
             </div>
-        </div>
-
-        {/* ADD USER FORM */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-          <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <input 
-              placeholder="FULL NAME" value={newUser.name} 
-              onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-              className="bg-slate-950 border border-slate-800 p-3 rounded text-[10px] font-bold text-white outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <input 
-              placeholder="EMAIL ADDRESS" value={newUser.email} 
-              onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-              className="bg-slate-950 border border-slate-800 p-3 rounded text-[10px] font-bold text-white outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <input 
-              type="password" placeholder="ACCESS CIPHER" value={newUser.password} 
-              onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-              className="bg-slate-950 border border-slate-800 p-3 rounded text-[10px] font-bold text-white outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <button type="submit" className="bg-white text-slate-900 font-black text-[10px] py-3 rounded uppercase tracking-widest hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-2 shadow-lg">
-              <UserPlus size={14}/> Provision_Node
-            </button>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Email Address</label>
+              <input 
+                type="email" placeholder="john@sma.com" value={newUser.email} 
+                onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Security Code</label>
+              <input 
+                type="password" placeholder="••••••••" value={newUser.password} 
+                onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" required
+              />
+            </div>
+            <div className="flex items-end">
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-md shadow-indigo-100 text-sm">
+                Confirm Onboarding
+              </button>
+            </div>
           </form>
-        </div>
+        </section>
 
-        {/* USER TABLE */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
+        {/* DATA TABLE */}
+        <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-950/50 border-b border-slate-800 text-[9px] font-black uppercase text-slate-500 tracking-widest">
-                <th className="p-5">Identity_Node</th>
-                <th className="p-5">Privilege_Level</th>
-                <th className="p-5">Access_Status</th>
-                <th className="p-5 text-right">System_Actions</th>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500 tracking-wider">
+                <th className="px-6 py-5">Identity Profile</th>
+                <th className="px-6 py-5">System Privileges</th>
+                <th className="px-6 py-5">Network Status</th>
+                <th className="px-6 py-5 text-right">Registry Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
+            <tbody className="divide-y divide-slate-100">
               {users.map(u => (
-                <tr key={u._id} className={`transition-all ${!u.active ? 'opacity-40 grayscale bg-slate-950/30' : 'hover:bg-slate-800/30'}`}>
-                  <td className="p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-500">
-                        {u.name?.substring(0,2).toUpperCase()}
+                <tr key={u._id} className={`group hover:bg-slate-50/50 transition-colors ${!u.active ? 'opacity-60 bg-slate-50/20' : ''}`}>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-all uppercase">
+                        {u.name?.charAt(0)}
                       </div>
                       <div>
-                        <p className="text-[10px] font-black text-white uppercase tracking-tight">{u.name}</p>
-                        <p className="text-[8px] text-slate-500 font-mono italic">{u.email}</p>
+                        <p className="font-bold text-slate-800 text-sm">{u.name}</p>
+                        <p className="text-xs text-slate-400 flex items-center gap-1.5"><Mail size={12}/> {u.email}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="p-5">
+                  <td className="px-6 py-4">
                     {editingId === u._id ? (
-                      <select 
-                        value={editRole} 
-                        onChange={(e) => setEditRole(e.target.value)}
-                        className="bg-slate-950 border border-emerald-500/50 p-1.5 rounded text-[9px] font-black text-emerald-400 outline-none"
-                      >
-                        <option value="user">USER</option>
-                        <option value="admin">ADMIN</option>
-                        <option value="superadmin">SUPER_ADMIN</option>
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <select 
+                          value={editRole} 
+                          onChange={(e) => setEditRole(e.target.value)}
+                          className="px-3 py-1.5 border rounded-lg bg-white text-xs font-bold border-indigo-500 outline-none ring-4 ring-indigo-50"
+                        >
+                          <option value="user">USER</option>
+                          <option value="admin">ADMIN</option>
+                          <option value="superadmin">SUPERADMIN</option>
+                        </select>
+                        <button onClick={() => handleRoleUpdate(u._id, u.name)} className="p-2 text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"><Save size={16}/></button>
+                        <button onClick={() => setEditingId(null)} className="p-2 text-slate-400 bg-slate-50 rounded-lg hover:bg-slate-100"><X size={16}/></button>
+                      </div>
                     ) : (
-                      <span className={`text-[8px] font-black px-2 py-1 rounded border ${
-                        u.role === 'superadmin' ? 'border-red-500/30 text-red-500 bg-red-500/10' : 'border-emerald-500/30 text-emerald-500 bg-emerald-500/10'
+                      <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full border ${
+                        u.role === 'superadmin' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'
                       }`}>
                         {u.role?.toUpperCase()}
                       </span>
                     )}
                   </td>
-                  <td className="p-5">
+                  <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${u.active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-600'}`}></div>
-                        <span className="text-[9px] font-black uppercase tracking-tighter">{u.active ? 'Authorized' : 'Suspended'}</span>
+                      <div className={`w-2 h-2 rounded-full ${u.active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-slate-300'}`} />
+                      <span className="text-xs font-bold text-slate-600 uppercase tracking-tighter">{u.active ? 'Operational' : 'Restricted'}</span>
                     </div>
                   </td>
-                  <td className="p-5 text-right space-x-2">
-                    <div className="flex items-center justify-end gap-2">
-                      {editingId === u._id ? (
-                        <>
-                          <button onClick={() => saveRoleMutation.mutate({ id: u._id, role: editRole })} className="p-2 text-emerald-500 hover:bg-emerald-500/10 rounded border border-emerald-500/20"><Save size={14}/></button>
-                          <button onClick={() => setEditingId(null)} className="p-2 text-slate-500 hover:bg-slate-500/10 rounded"><X size={14}/></button>
-                        </>
-                      ) : (
-                        <button onClick={() => { setEditingId(u._id); setEditRole(u.role); }} className="p-2 text-slate-500 hover:text-white transition-colors hover:bg-slate-800 rounded"><Edit2 size={13}/></button>
-                      )}
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-1">
                       
-                      <button 
-                        onClick={() => toggleStatusMutation.mutate(u)}
-                        className={`p-2 transition-all rounded ${u.active ? 'text-slate-500 hover:bg-amber-500/10 hover:text-amber-500' : 'text-amber-500 hover:bg-emerald-500/10 hover:text-emerald-500'}`}
-                      >
-                        {u.active ? <PowerOff size={14} /> : <Power size={14} />}
-                      </button>
+                      {/* INLINE DELETE CONFIRMATION */}
+                      {deleteConfirmId === u._id ? (
+                        <div className="flex items-center gap-2 bg-rose-50 border border-rose-100 p-1 rounded-xl animate-in fade-in slide-in-from-right-2 duration-200">
+                           <span className="text-[10px] font-black text-rose-600 px-2 uppercase tracking-tight">Delete?</span>
+                           <button 
+                             onClick={() => executeDeletion(u._id)} 
+                             className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 shadow-sm"
+                           >
+                             <Check size={14}/>
+                           </button>
+                           <button 
+                             onClick={() => setDeleteConfirmId(null)} 
+                             className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300"
+                           >
+                             <X size={14}/>
+                           </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button onClick={() => { setEditingId(u._id); setEditRole(u.role); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Edit2 size={16}/></button>
+                          <button onClick={() => handleStatusToggle(u)} className={`p-2 rounded-xl transition-all ${u.active ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}`}>{u.active ? <PowerOff size={18} /> : <Power size={18} />}</button>
+                          <button onClick={() => setDeleteConfirmId(u._id)} className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18}/></button>
+                        </>
+                      )}
 
-                      <button onClick={() => deleteUserConfirm(u._id, u.name)} className="p-2 text-slate-700 hover:text-red-500 hover:bg-red-500/10 transition-all rounded"><Trash2 size={14}/></button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!loading && users.length === 0 && (
-            <div className="p-10 text-center flex flex-col items-center gap-3">
-              <Database size={24} className="text-slate-700" />
-              <p className="text-[10px] uppercase font-bold text-slate-600 tracking-widest">No Identity Nodes Found In Registry</p>
-              <button onClick={() => fetchUsers()} className="text-[8px] font-black text-emerald-500 uppercase border border-emerald-500/20 px-3 py-1 rounded hover:bg-emerald-500/10 transition-all">Re-Sync Database</button>
+          {users.length === 0 && !loading && (
+            <div className="py-20 flex flex-col items-center justify-center text-slate-300 gap-3 border-t">
+              <Database size={48} strokeWidth={1} />
+              <p className="font-medium text-sm">No accounts in system registry</p>
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
