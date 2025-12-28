@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Routes, Route, useLocation, BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext"; 
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
@@ -15,43 +15,59 @@ import UserAdmin from "./pages/UserAdmin";
 
 function AppContent() {
   const location = useLocation();
-  
-  // Define pages where Navbar/Sidebar should be hidden (like Login)
   const isLoginPage = location.pathname === "/login";
 
   return (
-    <>
-      {/* 1. Only show navigation if NOT on login page */}
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#020617] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-300">
+      
+      {/* Navbar will now correctly see 'user' because it's inside AuthProvider */}
       {!isLoginPage && <Navbar />}
       
-      <div className={isLoginPage ? "w-full" : "flex min-h-screen"}>
+      <div className={`flex flex-1 ${isLoginPage ? "w-full" : "relative"}`}>
+        
+        {/* Sidebar will also correctly see 'user' */}
         {!isLoginPage && <Sidebar />}
         
-        <main className={isLoginPage ? "w-full" : "flex-1 p-6 bg-gray-50"}>
-          <Routes>
-            {/* Core Routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/clients" element={<Clients />} />
-            
-            {/* Finance Modules */}
-            <Route path="/quotations" element={<Quotations />} />
-            <Route path="/quotations/new" element={<AddQuotation />} />
-            <Route path="/invoices" element={<Invoices />} />
-            <Route path="/invoices/new" element={<AddInvoice />} />
-            <Route path="/receipts" element={<Receipts />} />
-            
-            {/* Communication & Admin */}
-            <Route path="/fincomm" element={<EmailComposer />} />
-            <Route path="/useradmin" element={<UserAdmin />} />
-          </Routes>
+        {/* MAIN CONTENT: flex-1 and min-w-0 ensures it shrinks when Sidebar opens */}
+        <main className={`
+          flex-1 min-w-0 flex flex-col
+          ${isLoginPage ? "w-full" : "transition-all duration-300 ease-in-out"}
+        `}>
+          
+          <div className={`${isLoginPage ? "" : "p-4 md:p-8 lg:p-10"}`}>
+            <div className={isLoginPage ? "" : "max-w-[1600px] mx-auto w-full"}>
+              
+              {!isLoginPage && (
+                <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                  <h1 className="text-xl font-bold tracking-tight capitalize">
+                    {location.pathname.split('/')[1] || 'Overview'}
+                  </h1>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Enterprise Resource Management / {location.pathname === "/" ? "Dashboard" : location.pathname.substring(1)}
+                  </p>
+                </div>
+              )}
+
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/clients" element={<Clients />} />
+                <Route path="/quotations" element={<Quotations />} />
+                <Route path="/quotations/new" element={<AddQuotation />} />
+                <Route path="/invoices" element={<Invoices />} />
+                <Route path="/invoices/new" element={<AddInvoice />} />
+                <Route path="/receipts" element={<Receipts />} />
+                <Route path="/fincomm" element={<EmailComposer />} />
+                <Route path="/useradmin" element={<UserAdmin />} />
+              </Routes>
+            </div>
+          </div>
         </main>
       </div>
-    </>
+    </div>
   );
 }
 
-// 2. Wrap the entire app in the AuthProvider
 export default function App() {
   return (
     <AuthProvider>

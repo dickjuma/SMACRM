@@ -36,7 +36,7 @@ const Login = () => {
         throw new Error(data.message || "Login Failed");
       }
 
-      // Check for token in different possible fields
+      
       const token = data.accessToken || data.token;
 
       if (!token) {
@@ -44,13 +44,12 @@ const Login = () => {
         throw new Error("SERVER_ERROR: No access token provided.");
       }
 
-      // BROADCAST TO CONTEXT
-      // This updates the central state so Navbar/Sidebar show up
+
       login(data.user, token); 
 
       toast.success(`Access Granted: Welcome ${data.user.name}`);
 
-      // Short delay to ensure localStorage is written and toast is visible
+      
       setTimeout(() => {
         navigate("/", { replace: true }); 
       }, 800);
@@ -78,12 +77,12 @@ const Login = () => {
               <Shield size={24} strokeWidth={2.5} />
             </div>
             <h1 className="text-xl font-black text-white tracking-widest uppercase">SMA_Systems</h1>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em] mt-2">Secure_Access_Portal</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em] mt-2">Access The CRM</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-500 uppercase ml-1">Identity_Endpoint</label>
+              <label className="text-[9px] font-black text-slate-500 uppercase ml-1">User Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
                 <input 
@@ -95,7 +94,7 @@ const Login = () => {
             </div>
 
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-500 uppercase ml-1">Access_Cipher</label>
+              <label className="text-[9px] font-black text-slate-500 uppercase ml-1">pasword</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
                 <input 
@@ -123,7 +122,7 @@ const Login = () => {
           
           <div className="mt-8 pt-6 border-t border-slate-800/50 text-center">
             <p className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
-              Protected by SMA_CORE Security Engine v2.0
+              © 2024 SMA Systems. All Rights Reserved.
             </p>
           </div>
         </div>

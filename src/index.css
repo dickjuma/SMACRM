@@ -1,5 +1,28 @@
-/* index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* THE ERP STACKING ARCHITECTURE */
+:root {
+  --layer-content: 1;
+  --layer-sticky: 40;
+  --layer-navbar: 110;
+  --layer-backdrop: 140;
+  --layer-sidebar: 150;
+  --layer-toggle: 1000;
+}
+
+/* Force page content to stay below navigation */
+main {
+  position: relative;
+  z-index: var(--layer-content);
+}
+
+/* Prevent sticky table headers or buttons from jumping over nav */
+thead, th, .sticky, [style*="position: sticky"] {
+  z-index: var(--layer-sticky) !important;
+}
+
+/* Custom scrollbar for that clean Enterprise look */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
