@@ -1,132 +1,339 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Mail, Loader2, Shield } from "lucide-react";
+import { Lock, Mail, Loader2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
-const BASE_URL= process.env.REACT_APP_BACKEND_URL
-const API_URL = `${BASE_URL}/auth`;
+import api from "../services/api"; // Import the configured axios instance
+
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
+  
   const navigate = useNavigate();
   const { login } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    
+    if (!email || !password) {
+      toast.error("Email and password are required");
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/login`, {
-  method: "POST",
-  headers: { 
-    "Content-Type": "application/json",
-    "Accept": "application/json" // Good practice to tell server what you expect back
-  },
-  body: JSON.stringify({ email, password }),
-});
+      // Use the configured api service instead of fetch
+      const response = await api.post("/auth/login", {
+        email,
+        password,
+        rememberMe
+      });
 
-      const data = await response.json();
-      console.log("Auth Response Received:", data); // DEBUG LOG
+      const data = response.data;
 
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error("ACCESS_REVOKED: This account has been deactivated.");
+      if (!data.success) {
+        throw new Error(data.message || "Login failed");
+      }
+
+      // Your backend returns token and user
+      const token = data.token;
+      const userData = data.user;
+      const sessionId = data.sessionId;
+      const expiresIn = data.expiresIn;
+
+      if (!token || !userData) {
+        throw new Error("Invalid response from server");
+      }
+
+      // Store rememberMe preference if needed
+      if (rememberMe) {
+        localStorage.setItem('rememberMe', 'true');
+        // Optionally store refresh token if your backend provides one
+        if (data.refreshToken) {
+          localStorage.setItem('refreshToken', data.refreshToken);
         }
-        throw new Error(data.message || "Login Failed");
+      } else {
+        localStorage.removeItem('rememberMe');
+        localStorage.removeItem('refreshToken');
       }
 
-      
-      const token = data.accessToken || data.token;
-
-      if (!token) {
-        console.error("Token missing in response:", data);
-        throw new Error("SERVER_ERROR: No access token provided.");
+      // Store session info if needed
+      if (sessionId) {
+        localStorage.setItem('sessionId', sessionId);
       }
 
+      // Call your auth context login
+      login(userData, token);
 
-      login(data.user, token); 
+      toast.success(`Welcome ${userData.name}!`);
 
-      toast.success(`Access Granted: Welcome ${data.user.name}`);
-
-      
+      // Simple redirect after login
       setTimeout(() => {
-        navigate("/", { replace: true }); 
-      }, 800);
+        navigate("/dashboard");
+      }, 500);
 
     } catch (err) {
-      console.error("Login Process Error:", err.message);
-      toast.error(err.message, {
-        style: { background: '#1e293b', color: '#fff', border: '1px solid #334155' }
-      });
+      console.error("Login error:", err);
+      
+      // Handle specific error messages from backend
+      let errorMessage = err.message || "Login failed. Please try again.";
+      
+      if (err.response?.data) {
+        const errorData = err.response.data;
+        
+        // Map backend error codes to user-friendly messages
+        const errorMessages = {
+          'VALIDATION_ERROR': 'Please check your input and try again.',
+          'INVALID_CREDENTIALS': 'Invalid email or password.',
+          'ACCOUNT_DEACTIVATED': 'Your account has been deactivated. Please contact administrator.',
+          'USER_NOT_FOUND': 'No account found with this email.',
+          'SERVER_ERROR': 'Server error. Please try again later.',
+          'TOO_MANY_ATTEMPTS': 'Too many login attempts. Please try again later.'
+        };
+        
+        if (errorData.error && errorMessages[errorData.error]) {
+          errorMessage = errorMessages[errorData.error];
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+        
+        // Log validation errors for debugging
+        if (errorData.details) {
+          console.log('Validation errors:', errorData.details);
+        }
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  // Handle demo login (optional - for testing)
+  const handleDemoLogin = async () => {
+    setEmail("demo@example.com");
+    setPassword("demo123");
+    
+    // Auto-submit after a delay
+    setTimeout(() => {
+      const event = new Event('submit', { cancelable: true });
+      document.querySelector('form').dispatchEvent(event);
+    }, 100);
+  };
+
+  // Handle enter key press
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !loading) {
+      handleLogin(e);
+    }
+  };
+
   return (
-    <div className="h-screen w-full bg-[#0F172A] flex items-center justify-center p-4">
-      <Toaster position="top-center" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+      <Toaster 
+        position="top-center" 
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1e293b',
+            color: '#fff',
+            border: '1px solid #334155',
+          },
+          success: {
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
       
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-        <div className="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl"></div>
-        
-        <div className="relative z-10">
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center text-slate-900 mb-4 shadow-lg shadow-emerald-500/20">
-              <Shield size={24} strokeWidth={2.5} />
+      {/* Animated background particles */}
+      <div className="absolute inset-0 overflow-hidden">
+        {[...Array(20)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-blue-500/20 rounded-full animate-float"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              animationDelay: `${Math.random() * 5}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Login Card */}
+      <div className="relative w-full max-w-md bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl z-10">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-block p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl mb-4">
+            <Lock className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Welcome Back</h1>
+          <p className="text-slate-400 text-sm">Sign in to continue</p>
+        </div>
+
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="space-y-6" onKeyPress={handleKeyPress}>
+          {/* Email Input */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                placeholder="Enter your email"
+                required
+                disabled={loading}
+                autoComplete="email"
+              />
             </div>
-            <h1 className="text-xl font-black text-white tracking-widest uppercase">SMA_Systems</h1>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em] mt-2">Access The CRM</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-500 uppercase ml-1">User Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
-                <input 
-                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-3 pl-10 pr-4 text-xs font-bold text-white outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-700"
-                  placeholder="email@company.com"
-                />
-              </div>
+          {/* Password Input */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Password
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                placeholder="Enter your password"
+                required
+                disabled={loading}
+                autoComplete="current-password"
+              />
             </div>
+          </div>
 
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-500 uppercase ml-1">pasword</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
-                <input 
-                  type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-3 pl-10 pr-4 text-xs font-bold text-white outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-700"
-                  placeholder="••••••••"
-                />
-              </div>
+          {/* Remember Me & Forgot Password */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-2"
+                disabled={loading}
+              />
+              <label htmlFor="rememberMe" className="ml-2 text-sm text-slate-400">
+                Remember me
+              </label>
             </div>
-
-            <button 
-              type="submit" disabled={loading}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 py-3 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all mt-4 flex items-center justify-center gap-2 group"
+            <button
+              type="button"
+              className="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+              onClick={() => navigate("/forgot-password")}
+              disabled={loading}
             >
-              {loading ? (
-                <Loader2 className="animate-spin" size={14} />
-              ) : (
-                <>
-                  Authorize_Entry
-                  <Shield size={12} className="group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
+              Forgot password?
             </button>
-          </form>
-          
-          <div className="mt-8 pt-6 border-t border-slate-800/50 text-center">
-            <p className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
-              © 2024 SMA Systems. All Rights Reserved.
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-700 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin mr-2" size={18} />
+                Signing in...
+              </>
+            ) : (
+              'Sign In'
+            )}
+          </button>
+
+          {/* Demo Login Button (Optional - remove in production) */}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={loading}
+              className="text-sm text-slate-400 hover:text-slate-300 transition-colors duration-200"
+            >
+              Try demo account
+            </button>
+          </div>
+
+          {/* Sign Up Link */}
+          <div className="text-center pt-4 border-t border-slate-700/50">
+            <p className="text-sm text-slate-400">
+              Don't have an account?{" "}
+              <button
+                type="button"
+                className="text-blue-400 hover:text-blue-300 font-medium transition-colors duration-200"
+                onClick={() => navigate("/register")}
+                disabled={loading}
+              >
+                Sign up
+              </button>
             </p>
           </div>
-        </div>
+        </form>
       </div>
+
+      {/* Version Info */}
+      <div className="absolute bottom-4 left-4 text-xs text-slate-500">
+        v1.0.0
+      </div>
+
+      {/* Simple CSS animation */}
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.2; }
+          50% { transform: translateY(-20px) rotate(180deg); opacity: 0.5; }
+        }
+        .animate-float {
+          animation: float 10s infinite ease-in-out;
+        }
+        
+        /* Smooth focus styles */
+        input:focus {
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        /* Disabled state */
+        input:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+      `}</style>
     </div>
   );
 };
