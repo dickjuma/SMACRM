@@ -1,11 +1,13 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { useReactToPrint } from "react-to-print";
 import toast, { Toaster } from "react-hot-toast";
-
+import { invoiceApi, clientApi, productApi } from "../services/invoiceApi";
+import api from "../services/invoiceApi";
+import { getDocumentSettings, mergeAppSettings } from "../utils/documentSettings";
 import {
   Eye, Edit, Trash2, Download, Printer, 
   Plus, RefreshCw, X, Search, FileText, FileSpreadsheet,
@@ -27,99 +29,37 @@ import {
   ChevronDown, User
 } from "lucide-react";
 
-// API Config
-const BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
-const API_URL = `${BASE_URL}/invoices`;
-const CLIENTS_API_URL = `${BASE_URL}/clients`;
-const PRODUCTS_API_URL = `${BASE_URL}/products`;
-
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  }
-});
-
-// Request interceptor
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  
-  console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
-  return config;
-}, (error) => Promise.reject(error));
-
-// Response interceptor
-api.interceptors.response.use(
-  (response) => {
-    console.log(`✅ ${response.status} ${response.config.url}`, response.data);
-    return response;
-  },
-  (error) => {
-    console.error(`❌ ${error.response?.status || 'Network'} Error:`, {
-      url: error.config?.url,
-      message: error.message,
-      data: error.response?.data
-    });
-    
-    if (error.response?.status === 401) {
-      toast.error("Session expired. Please login again.");
-      localStorage.removeItem("token");
-      window.location.href = "/login";
-    } else if (error.response?.status === 403) {
-      toast.error("Access denied. Insufficient permissions.");
-    } else if (error.response?.status === 404) {
-      toast.error("Resource not found.");
-    } else if (error.response?.status === 409) {
-      toast.error("Duplicate entry detected.");
-    } else if (error.response?.status === 422) {
-      toast.error("Validation error. Please check your input.");
-    } else if (error.response?.status === 500) {
-      toast.error("Server error. Please try again later.");
-    } else if (!error.response) {
-      toast.error("Network error. Please check your connection.");
-    }
-    
-    return Promise.reject(error);
-  }
-);
-
-// Helper function to extract data from API response
-const extractData = (response) => {
-  if (response.data && Array.isArray(response.data)) {
-    return response.data;
-  } else if (response.data && response.data.data) {
-    return response.data.data;
-  } else if (response.data) {
-    if (response.data.success && response.data.data !== undefined) {
-      return response.data.data;
-    }
-    return [response.data];
-  }
-  return [];
-};
-
-// API Functions
+// API Functions - using service layer
 const fetchInvoices = async (params = {}) => {
-  const response = await api.get(API_URL, { params });
-  return extractData(response);
+  return invoiceApi.getInvoices(params);
 };
 
 const fetchClients = async () => {
-  const response = await api.get(CLIENTS_API_URL);
-  return extractData(response);
+  return clientApi.getClients({ limit: 1000, sortBy: "name", sortOrder: "asc" });
 };
 
 const fetchProducts = async () => {
-  const response = await api.get(PRODUCTS_API_URL);
-  return extractData(response);
+  return productApi.getProducts();
 };
 
 const fetchInvoiceStats = async () => {
-  const response = await api.get(`${API_URL}/stats`);
-  return response.data.data || response.data || {};
+  return invoiceApi.getInvoiceStats();
 };
+
+const fetchAppSettings = async () => {
+  const response = await api.get("/settings", { params: { _t: Date.now() } });
+  return mergeAppSettings(response.data?.data || {});
+};
+
+const normalizeClients = (source) => {
+  if (Array.isArray(source)) return source;
+  if (source && Array.isArray(source.clients)) return source.clients;
+  if (source && Array.isArray(source.data)) return source.data;
+  if (source && source.data && Array.isArray(source.data.clients)) return source.data.clients;
+  return [];
+};
+
+const getClientId = (client) => client?._id || client?.id || "";
 
 // Constants
 const CURRENCIES = [
@@ -158,12 +98,15 @@ const PAYMENT_METHODS = [
 ];
 
 // Helper Functions
-const generateInvoiceNumber = () => {
-  const prefix = "INV";
-  const year = new Date().getFullYear().toString().slice(-2);
-  const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `${prefix}-${year}${month}-${random}`;
+const formatSuggestedDocumentNumber = (prefix, nextNumber, suffix = "") => {
+  const cleanPrefix = String(prefix || "DOC").trim().toUpperCase() || "DOC";
+  const numeric = Number(nextNumber);
+  const sequence = Number.isFinite(numeric) && numeric > 0
+    ? String(Math.floor(numeric)).padStart(6, "0")
+    : "000001";
+  const cleanSuffix = String(suffix || "").trim().toUpperCase();
+  const base = `${cleanPrefix}-${sequence}`;
+  return cleanSuffix ? `${base}-${cleanSuffix}` : base;
 };
 
 const formatCurrency = (amount, currency = "USD") => {
@@ -194,6 +137,22 @@ const calculateAge = (date) => {
   const diffTime = dueDate - today;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;
+};
+
+const formatDisplayDate = (value) => {
+  if (!value) return "N/A";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+};
+
+const normalizeStatus = (status, statusMap, fallback = "DRAFT") => {
+  const normalized = String(status || "").toUpperCase().trim();
+  return statusMap[normalized] ? normalized : fallback;
 };
 
 // Main Component
@@ -268,6 +227,14 @@ const Invoices = () => {
     staleTime: 60000,
   });
 
+  const { data: appSettings } = useQuery({
+    queryKey: ["app-settings"],
+    queryFn: fetchAppSettings,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
   // Ensure data is always an array
   const invoices = useMemo(() => {
     if (Array.isArray(invoicesData)) return invoicesData;
@@ -277,9 +244,7 @@ const Invoices = () => {
   }, [invoicesData]);
 
   const clients = useMemo(() => {
-    if (Array.isArray(clientsData)) return clientsData;
-    if (clientsData && Array.isArray(clientsData.data)) return clientsData.data;
-    return [];
+    return normalizeClients(clientsData);
   }, [clientsData]);
 
   const products = useMemo(() => {
@@ -287,6 +252,17 @@ const Invoices = () => {
     if (productsData && Array.isArray(productsData.data)) return productsData.data;
     return [];
   }, [productsData]);
+
+  const invoiceDocSettings = useMemo(
+    () => getDocumentSettings(appSettings, "invoice"),
+    [appSettings]
+  );
+
+  const closeInvoiceEditor = () => {
+    setViewing(null);
+    setEditing(null);
+    setAdding(false);
+  };
 
   // Calculate top clients for analytics
   const topClients = useMemo(() => {
@@ -316,11 +292,11 @@ const Invoices = () => {
           product: item.product?._id || item.product
         }))
       };
-      
+
       if (data._id) {
-        return api.put(`${API_URL}/${data._id}`, payload);
+        return invoiceApi.updateInvoice(data._id, payload);
       } else {
-        return api.post(API_URL, payload);
+        return invoiceApi.createInvoice(payload);
       }
     },
     onSuccess: (response) => {
@@ -341,11 +317,11 @@ const Invoices = () => {
         }
       );
       
-      queryClient.invalidateQueries(["invoices"]);
-      queryClient.invalidateQueries(["invoice-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
+      refetch();
       
-      setEditing(null);
-      setAdding(false);
+      closeInvoiceEditor();
     },
     onError: (error) => {
       const errorMessage = error.response?.data?.message || error.message || "Failed to save invoice";
@@ -366,7 +342,7 @@ const Invoices = () => {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => api.delete(`${API_URL}/${id}`),
+    mutationFn: (id) => api.delete(`/invoices/${id}`),
     onSuccess: () => {
       toast.success("Invoice deleted successfully", {
         duration: 3000,
@@ -382,8 +358,9 @@ const Invoices = () => {
         }
       });
       
-      queryClient.invalidateQueries(["invoices"]);
-      queryClient.invalidateQueries(["invoice-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
+      refetch();
       setSelectedInvoices([]);
     },
     onError: (error) => {
@@ -405,7 +382,7 @@ const Invoices = () => {
   });
 
   const bulkDeleteMutation = useMutation({
-    mutationFn: (ids) => api.post(`${API_URL}/bulk-delete`, { ids }),
+    mutationFn: (ids) => api.post(`/invoices/bulk-delete`, { ids }),
     onSuccess: () => {
       toast.success(`${selectedInvoices.length} invoices deleted successfully`, {
         duration: 3000,
@@ -423,8 +400,9 @@ const Invoices = () => {
       
       setSelectedInvoices([]);
       setShowBulkActions(false);
-      queryClient.invalidateQueries(["invoices"]);
-      queryClient.invalidateQueries(["invoice-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
+      refetch();
     },
     onError: (error) => {
       const errorMessage = error.response?.data?.message || error.message || "Failed to delete invoices";
@@ -445,7 +423,7 @@ const Invoices = () => {
   });
 
   const sendEmailMutation = useMutation({
-    mutationFn: (invoiceId) => api.post(`${API_URL}/${invoiceId}/send-email`),
+    mutationFn: (invoiceId) => api.post(`/invoices/${invoiceId}/send-email`),
     onMutate: (invoiceId) => {
       toast.loading("Sending email...", {
         id: "email-send",
@@ -470,10 +448,11 @@ const Invoices = () => {
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: (invoiceId) => api.post(`${API_URL}/${invoiceId}/duplicate`),
+    mutationFn: (invoiceId) => api.post(`/invoices/${invoiceId}/duplicate`),
     onSuccess: (response) => {
       toast.success("Invoice duplicated successfully!");
-      queryClient.invalidateQueries(["invoices"]);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      refetch();
       setEditing(response.data);
     },
     onError: (error) => {
@@ -483,13 +462,14 @@ const Invoices = () => {
   });
 
   const bulkStatusMutation = useMutation({
-    mutationFn: ({ ids, status }) => api.post(`${API_URL}/bulk-status`, { ids, status }),
+    mutationFn: ({ ids, status }) => api.post(`/invoices/bulk-status`, { ids, status }),
     onSuccess: () => {
       toast.success(`Status updated for ${selectedInvoices.length} invoices`);
       setSelectedInvoices([]);
       setShowBulkActions(false);
-      queryClient.invalidateQueries(["invoices"]);
-      queryClient.invalidateQueries(["invoice-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice-stats"] });
+      refetch();
     },
     onError: (error) => {
       const errorMessage = error.response?.data?.message || error.message || "Failed to update status";
@@ -580,7 +560,7 @@ const Invoices = () => {
         }
       });
       
-      api.post(`${API_URL}/${invoice._id}/track-download`).catch(console.error);
+      api.post(`/invoices/${invoice._id}/track-download`).catch(console.error);
     } catch (err) {
       console.error("PDF generation error:", err);
       toast.error("Failed to generate PDF. Please try again.", { 
@@ -686,7 +666,9 @@ const Invoices = () => {
     }
     
     if (filters.status !== "all") {
-      filtered = filtered.filter(inv => inv.status === filters.status);
+      filtered = filtered.filter(
+        (inv) => normalizeStatus(inv.status, INVOICE_STATUSES) === filters.status
+      );
     }
     
     if (filters.dateRange !== "all") {
@@ -726,7 +708,9 @@ const Invoices = () => {
     }
     
     if (filters.client !== "all") {
-      filtered = filtered.filter(inv => inv.client?._id === filters.client);
+      filtered = filtered.filter(
+        (inv) => (inv.client?._id || inv.client?.id || inv.client) === filters.client
+      );
     }
     
     if (filters.amountRange !== "all") {
@@ -867,6 +851,7 @@ const Invoices = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 text-slate-700 font-sans antialiased">
       <Toaster 
         position="top-right"
+        containerStyle={{ top: 76, zIndex: 1200 }}
         toastOptions={{
           success: {
             duration: 3000,
@@ -1129,7 +1114,7 @@ const Invoices = () => {
                 >
                   <option value="all">All Clients</option>
                   {Array.isArray(clients) && clients.map(client => (
-                    <option key={client._id} value={client._id}>{client.name}</option>
+                    <option key={getClientId(client)} value={getClientId(client)}>{client.name}</option>
                   ))}
                 </select>
               </div>
@@ -1443,7 +1428,7 @@ const Invoices = () => {
                         
                         <td className="px-6 py-4">
                           <div className="space-y-1">
-                            <p className="text-sm text-slate-900">{invoice.date}</p>
+                            <p className="text-sm text-slate-900">{formatDisplayDate(invoice.date)}</p>
                             <p className="text-xs text-slate-500">
                               {new Date(invoice.date).toLocaleDateString('en-US', { weekday: 'short' })}
                             </p>
@@ -1452,7 +1437,7 @@ const Invoices = () => {
                         
                         <td className="px-6 py-4">
                           <div className="space-y-1">
-                            <p className="text-sm text-slate-900">{invoice.dueDate || "N/A"}</p>
+                            <p className="text-sm text-slate-900">{formatDisplayDate(invoice.dueDate)}</p>
                             {invoice.dueDate && (
                               <p className={`text-xs ${
                                 new Date(invoice.dueDate) < new Date() && invoice.status !== 'PAID'
@@ -1482,11 +1467,16 @@ const Invoices = () => {
                         </td>
                         
                         <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase ${
-                            INVOICE_STATUSES[invoice.status]?.color || 'bg-gray-100 text-gray-700'
-                          }`}>
-                            {INVOICE_STATUSES[invoice.status]?.label || invoice.status}
-                          </span>
+                          {(() => {
+                            const statusKey = normalizeStatus(invoice.status, INVOICE_STATUSES);
+                            return (
+                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase ${
+                                INVOICE_STATUSES[statusKey]?.color || 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {INVOICE_STATUSES[statusKey]?.label || statusKey}
+                              </span>
+                            );
+                          })()}
                         </td>
                         
                         <td className="px-6 py-4 text-right">
@@ -1633,11 +1623,16 @@ const Invoices = () => {
                   </div>
                   
                   <div className="flex flex-col items-end">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
-                      INVOICE_STATUSES[invoice.status]?.color || 'bg-gray-100 text-gray-700'
-                    }`}>
-                      {INVOICE_STATUSES[invoice.status]?.label || invoice.status}
-                    </span>
+                    {(() => {
+                      const statusKey = normalizeStatus(invoice.status, INVOICE_STATUSES);
+                      return (
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
+                          INVOICE_STATUSES[statusKey]?.color || 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {INVOICE_STATUSES[statusKey]?.label || statusKey}
+                        </span>
+                      );
+                    })()}
                     {invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.status !== 'PAID' && (
                       <span className="text-xs text-red-600 mt-1">Overdue</span>
                     )}
@@ -1655,11 +1650,11 @@ const Invoices = () => {
                 <div className="space-y-2 mb-4">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Date:</span>
-                    <span className="font-medium">{invoice.date}</span>
+                    <span className="font-medium">{formatDisplayDate(invoice.date)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Due:</span>
-                    <span className="font-medium">{invoice.dueDate || "N/A"}</span>
+                    <span className="font-medium">{formatDisplayDate(invoice.dueDate)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Amount:</span>
@@ -1711,6 +1706,7 @@ const Invoices = () => {
       {viewing && (
         <InvoiceViewModal
           invoice={viewing}
+          documentSettings={invoiceDocSettings}
           ref={printRef}
           onClose={() => setViewing(null)}
           onPrint={handlePrintTrigger}
@@ -1729,6 +1725,7 @@ const Invoices = () => {
           invoice={editing}
           clients={clients}
           products={products}
+          appSettings={appSettings}
           onSave={(data) => saveMutation.mutate(data)}
           onClose={() => {
             setEditing(null);
@@ -1743,6 +1740,7 @@ const Invoices = () => {
 // Enhanced Invoice View Modal
 const InvoiceViewModal = React.forwardRef(({ 
   invoice, 
+  documentSettings,
   onClose, 
   onPrint, 
   onDownload, 
@@ -1756,27 +1754,29 @@ const InvoiceViewModal = React.forwardRef(({
   const grandTotal = invoice.total || (subtotal + (subtotal * (tax / 100)) - discount);
   const paidAmount = invoice.paidAmount || 0;
   const balance = grandTotal - paidAmount;
+  const docSettings = getDocumentSettings({ documents: { invoice: documentSettings } }, "invoice");
   
-  const StatusIcon = INVOICE_STATUSES[invoice.status]?.icon || FileText;
+  const statusKey = normalizeStatus(invoice.status, INVOICE_STATUSES);
+  const StatusIcon = INVOICE_STATUSES[statusKey]?.icon || FileText;
   const PaymentMethod = PAYMENT_METHODS.find(m => m.id === invoice.paymentMethod)?.icon || CreditCard;
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
-        <div className="flex justify-between items-center p-6 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center gap-4">
+  const modalContent = (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-0 sm:p-4">
+      <div className="bg-white w-full max-w-6xl rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col h-[100dvh] sm:max-h-[95vh]">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 p-4 sm:p-6 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div className="bg-indigo-600 p-3 rounded-xl">
               <FileText className="w-6 h-6 text-white" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Invoice Details</h2>
-              <p className="text-sm text-slate-500">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">Invoice Details</h2>
+              <p className="text-xs sm:text-sm text-slate-500 truncate">
                 {invoice.invoiceNumber || `INV-${invoice._id?.slice(-8).toUpperCase()}`}
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <button
               onClick={onDuplicate}
               className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1823,7 +1823,7 @@ const InvoiceViewModal = React.forwardRef(({
         
         <div className="flex-1 overflow-y-auto" ref={ref}>
           {/* Invoice Content */}
-          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-8 md:p-12 text-white">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-4 sm:p-8 md:p-12 text-white">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
               <div>
                 <div className="flex items-center gap-3 mb-4">
@@ -1831,30 +1831,32 @@ const InvoiceViewModal = React.forwardRef(({
                     <ShieldCheck className="w-8 h-8 text-indigo-600" />
                   </div>
                   <div>
-                    <h1 className="text-2xl md:text-3xl font-bold">SMA TECHNOLOGIES</h1>
-                    <p className="text-slate-300 text-sm">Professional Billing Solutions</p>
+                    <h1 className="text-2xl md:text-3xl font-bold">{docSettings.companyName}</h1>
+                    <p className="text-slate-300 text-sm">{docSettings.tagline}</p>
                   </div>
                 </div>
                 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm break-all">
                     <Phone className="w-4 h-4" />
-                    <span>+254 719 832 719</span>
+                    <span>{docSettings.phone}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm break-all">
                     <Mail className="w-4 h-4" />
-                    <span>billing@smacore.co.ke</span>
+                    <span>{docSettings.email}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm break-all">
                     <Globe className="w-4 h-4" />
-                    <span>www.smacore.co.ke</span>
+                    <span>{docSettings.website}</span>
                   </div>
                 </div>
               </div>
               
               <div className="text-left md:text-right">
                 <div className="mb-4">
-                  <p className="text-sm font-semibold text-slate-300 mb-1">INVOICE NUMBER</p>
+                  <p className="text-sm font-semibold text-slate-300 mb-1">
+                    {(docSettings.title || "INVOICE").toUpperCase()} NUMBER
+                  </p>
                   <p className="text-2xl font-bold font-mono">
                     {invoice.invoiceNumber || `INV-${invoice._id?.slice(-8).toUpperCase()}`}
                   </p>
@@ -1863,12 +1865,12 @@ const InvoiceViewModal = React.forwardRef(({
                 <div className="space-y-2">
                   <div>
                     <p className="text-sm text-slate-300">Issue Date</p>
-                    <p className="font-semibold">{invoice.date}</p>
+                    <p className="font-semibold">{formatDisplayDate(invoice.date)}</p>
                   </div>
                   {invoice.dueDate && (
                     <div>
                       <p className="text-sm text-slate-300">Due Date</p>
-                      <p className="font-semibold">{invoice.dueDate}</p>
+                      <p className="font-semibold">{formatDisplayDate(invoice.dueDate)}</p>
                     </div>
                   )}
                 </div>
@@ -1876,7 +1878,7 @@ const InvoiceViewModal = React.forwardRef(({
             </div>
           </div>
           
-          <div className="p-8 md:p-12">
+          <div className="p-4 sm:p-8 md:p-12">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
               <div>
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">BILLED TO</h3>
@@ -1896,12 +1898,12 @@ const InvoiceViewModal = React.forwardRef(({
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">INVOICE STATUS</h3>
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div className={`p-2 rounded-lg ${INVOICE_STATUSES[invoice.status]?.color.split(' ')[0]}`}>
+                    <div className={`p-2 rounded-lg ${INVOICE_STATUSES[statusKey]?.color.split(' ')[0] || "bg-gray-100"}`}>
                       <StatusIcon className="w-5 h-5" />
                     </div>
                     <div>
                       <p className="font-semibold text-slate-900">
-                        {INVOICE_STATUSES[invoice.status]?.label || invoice.status}
+                        {INVOICE_STATUSES[statusKey]?.label || statusKey}
                       </p>
                       <p className="text-sm text-slate-500">Current Status</p>
                     </div>
@@ -1927,7 +1929,7 @@ const InvoiceViewModal = React.forwardRef(({
             {/* Items Table */}
             <div className="mb-10">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full min-w-[640px] border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
                       <th className="text-left p-4 font-semibold text-slate-700">Description</th>
@@ -2025,54 +2027,58 @@ const InvoiceViewModal = React.forwardRef(({
           </div>
           
           {/* Footer */}
-          <div className="bg-slate-50 p-8 border-t border-slate-200">
+          <div className="bg-slate-50 p-4 sm:p-8 border-t border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center md:text-left">
               <div>
                 <h4 className="font-semibold text-slate-900 mb-2">Payment Information</h4>
-                <p className="text-sm text-slate-600">Account: 1234567890</p>
-                <p className="text-sm text-slate-600">Bank: SMA Bank Ltd</p>
-                <p className="text-sm text-slate-600">Branch: Nairobi CBD</p>
+                <p className="text-sm text-slate-600">{docSettings.addressLine1}</p>
+                <p className="text-sm text-slate-600">{docSettings.addressLine2}</p>
+                {!!docSettings.taxIdValue && (
+                  <p className="text-sm text-slate-600">
+                    {docSettings.taxIdLabel}: {docSettings.taxIdValue}
+                  </p>
+                )}
               </div>
               
               <div>
                 <h4 className="font-semibold text-slate-900 mb-2">Terms & Conditions</h4>
-                <p className="text-sm text-slate-600">Payment due within {invoice.paymentTerms || 30} days</p>
-                <p className="text-sm text-slate-600">Late fees may apply</p>
+                <p className="text-sm text-slate-600">Payment due within {invoice.paymentTerms || docSettings.paymentTermsDays || 30} days</p>
+                <p className="text-sm text-slate-600">{docSettings.footerNote}</p>
               </div>
               
               <div>
                 <h4 className="font-semibold text-slate-900 mb-2">Contact Us</h4>
-                <p className="text-sm text-slate-600">support@smacore.co.ke</p>
-                <p className="text-sm text-slate-600">+254 719 832 719</p>
-                <p className="text-sm text-slate-600">www.smacore.co.ke</p>
+                <p className="text-sm text-slate-600">{docSettings.email}</p>
+                <p className="text-sm text-slate-600">{docSettings.phone}</p>
+                <p className="text-sm text-slate-600">{docSettings.website}</p>
               </div>
             </div>
           </div>
         </div>
         
-        <div className="border-t border-slate-200 p-6">
-          <div className="flex flex-wrap justify-end gap-3">
+        <div className="border-t border-slate-200 p-4 sm:p-6">
+          <div className="flex flex-wrap justify-end gap-2 sm:gap-3">
             <button
               onClick={onDuplicate}
-              className="px-5 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors"
             >
               Duplicate
             </button>
             <button
               onClick={onEmail}
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
               Send Email
             </button>
             <button
               onClick={onDownload}
-              className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
             >
               Download PDF
             </button>
             <button
               onClick={onClose}
-              className="px-5 py-2.5 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
             >
               Close
             </button>
@@ -2081,30 +2087,58 @@ const InvoiceViewModal = React.forwardRef(({
       </div>
     </div>
   );
+  return createPortal(modalContent, document.body);
 });
 
 // Enhanced Add/Edit Modal with FIXED Client Selection
-const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
-  const [form, setForm] = useState(invoice || {
-    invoiceNumber: generateInvoiceNumber(),
-    client: null,
-    date: new Date().toISOString().split('T')[0],
-    dueDate: calculateDueDate(new Date().toISOString().split('T')[0], 30),
-    currency: "USD",
-    status: "DRAFT",
-    paymentMethod: "bank_transfer",
-    paymentTerms: 30,
-    tax: 0,
-    discount: 0,
-    notes: "",
-    items: [{ 
-      product: null, 
-      description: "", 
-      quantity: 1, 
-      price: 0, 
-      total: 0 
-    }]
+const AddEditModal = ({ invoice, clients, products, appSettings, onSave, onClose }) => {
+  const invoiceDocSettings = getDocumentSettings(appSettings, "invoice");
+  const suggestedInvoiceNumber = useMemo(
+    () => formatSuggestedDocumentNumber(invoiceDocSettings?.prefix, invoiceDocSettings?.nextNumber, invoiceDocSettings?.suffix),
+    [invoiceDocSettings]
+  );
+  const defaultCurrency = appSettings?.general?.defaultCurrency || "KES";
+  const defaultTerms = Number(invoiceDocSettings?.paymentTermsDays) || 30;
+  const today = new Date().toISOString().split('T')[0];
+
+  const [form, setForm] = useState(() => {
+    if (invoice) {
+      return {
+        ...invoice,
+        status: normalizeStatus(invoice.status, INVOICE_STATUSES),
+      };
+    }
+
+    return {
+      invoiceNumber: suggestedInvoiceNumber,
+      client: null,
+      date: today,
+      dueDate: calculateDueDate(today, defaultTerms),
+      currency: defaultCurrency,
+      status: "DRAFT",
+      paymentMethod: "bank_transfer",
+      paymentTerms: defaultTerms,
+      tax: 0,
+      discount: 0,
+      notes: invoiceDocSettings?.defaultNotes || "",
+      items: [{ 
+        product: null, 
+        description: "", 
+        quantity: 1, 
+        price: 0, 
+        total: 0 
+      }]
+    };
   });
+
+  useEffect(() => {
+    if (invoice) return;
+    setForm((prev) => {
+      const current = String(prev.invoiceNumber || "").trim();
+      if (current) return prev;
+      return { ...prev, invoiceNumber: suggestedInvoiceNumber };
+    });
+  }, [invoice, suggestedInvoiceNumber]);
 
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
@@ -2206,8 +2240,14 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
     const payload = {
       ...form,
       total: totals.total,
-      dueDate: form.dueDate || calculateDueDate(form.date, form.paymentTerms || 30)
+      dueDate: form.dueDate || calculateDueDate(form.date, form.paymentTerms || defaultTerms)
     };
+
+    const currentNumber = String(payload.invoiceNumber || "").trim().toUpperCase();
+    const suggestedNumber = String(suggestedInvoiceNumber || "").trim().toUpperCase();
+    if (!invoice && (!currentNumber || currentNumber === suggestedNumber)) {
+      delete payload.invoiceNumber;
+    }
     
     onSave(payload);
   };
@@ -2225,7 +2265,7 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center p-6 border-b border-slate-200">
           <h3 className="text-lg font-bold text-slate-900">
@@ -2245,15 +2285,21 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Invoice Number *
+                  Invoice Number
                 </label>
                 <input
                   type="text"
                   value={form.invoiceNumber}
                   onChange={(e) => setForm(prev => ({ ...prev, invoiceNumber: e.target.value }))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  required
+                  placeholder={invoice ? "Invoice number" : suggestedInvoiceNumber}
+                  required={Boolean(invoice)}
                 />
+                {!invoice && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Suggested from settings: {suggestedInvoiceNumber}
+                  </p>
+                )}
               </div>
               
               <div>
@@ -2318,7 +2364,7 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
                       {filteredClients.length > 0 ? (
                         filteredClients.map(client => (
                           <div
-                            key={client._id}
+                            key={getClientId(client)}
                             onClick={() => {
                               setForm(prev => ({ ...prev, client }));
                               setShowClientDropdown(false);
@@ -2394,7 +2440,7 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
                     setForm(prev => ({ 
                       ...prev, 
                       date: e.target.value,
-                      dueDate: calculateDueDate(e.target.value, form.paymentTerms || 30)
+                      dueDate: calculateDueDate(e.target.value, form.paymentTerms || defaultTerms)
                     }));
                   }}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
@@ -2420,7 +2466,7 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
                   Status *
                 </label>
                 <select
-                  value={form.status}
+                  value={normalizeStatus(form.status, INVOICE_STATUSES)}
                   onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value }))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                 >
@@ -2439,7 +2485,7 @@ const AddEditModal = ({ invoice, clients, products, onSave, onClose }) => {
                   min="0"
                   value={form.paymentTerms}
                   onChange={(e) => {
-                    const terms = parseInt(e.target.value) || 30;
+                    const terms = parseInt(e.target.value) || defaultTerms;
                     setForm(prev => ({ 
                       ...prev, 
                       paymentTerms: terms,

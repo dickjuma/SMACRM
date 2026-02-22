@@ -1,339 +1,231 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Mail, Loader2 } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
-import api from "../services/api"; // Import the configured axios instance
+import api from "../services/api";
+
+const logo = "/logos.jpg";
 
 const Login = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
-  const [loading, setLoading] = useState(false);
-  
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+    rememberMe: localStorage.getItem("rememberMe") === "true"
+  });
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const updateField = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const validate = () => {
+    const email = form.email.trim();
+    const password = form.password;
+    if (!email || !password) return "Email and password are required.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Please enter a valid email address.";
+    if (password.length < 6) return "Password must be at least 6 characters.";
+    return null;
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
-    
-    if (!email || !password) {
-      toast.error("Email and password are required");
-      return;
-    }
+    if (loading) return;
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast.error("Please enter a valid email address");
-      return;
-    }
-
-    // Validate password length
-    if (password.length < 6) {
-      toast.error("Password must be at least 6 characters");
+    const validationError = validate();
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
     setLoading(true);
 
     try {
-      // Use the configured api service instead of fetch
-      const response = await api.post("/auth/login", {
-        email,
-        password,
-        rememberMe
-      });
+      const payload = {
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        rememberMe: form.rememberMe
+      };
 
+      const response = await api.post("/auth/login", payload);
       const data = response.data;
 
-      if (!data.success) {
-        throw new Error(data.message || "Login failed");
+      if (!data?.success || !data?.token || !data?.user) {
+        throw new Error(data?.message || "Invalid login response from server.");
       }
 
-      // Your backend returns token and user
-      const token = data.token;
-      const userData = data.user;
-      const sessionId = data.sessionId;
-      const expiresIn = data.expiresIn;
-
-      if (!token || !userData) {
-        throw new Error("Invalid response from server");
-      }
-
-      // Store rememberMe preference if needed
-      if (rememberMe) {
-        localStorage.setItem('rememberMe', 'true');
-        // Optionally store refresh token if your backend provides one
-        if (data.refreshToken) {
-          localStorage.setItem('refreshToken', data.refreshToken);
-        }
+      if (form.rememberMe) {
+        localStorage.setItem("rememberMe", "true");
+        if (data.refreshToken) localStorage.setItem("refreshToken", data.refreshToken);
       } else {
-        localStorage.removeItem('rememberMe');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem("rememberMe");
+        localStorage.removeItem("refreshToken");
       }
 
-      // Store session info if needed
-      if (sessionId) {
-        localStorage.setItem('sessionId', sessionId);
-      }
+      if (data.sessionId) localStorage.setItem("sessionId", data.sessionId);
 
-      // Call your auth context login
-      login(userData, token);
-
-      toast.success(`Welcome ${userData.name}!`);
-
-      // Simple redirect after login
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 500);
-
+      login(data.user, data.token);
+      toast.success(`Welcome back, ${data.user.name || "User"}!`);
+      navigate("/");
     } catch (err) {
+      const errorMap = {
+        VALIDATION_ERROR: "Please check your input and try again.",
+        INVALID_CREDENTIALS: "Invalid email or password.",
+        ACCOUNT_DEACTIVATED: "Your account is deactivated. Contact an administrator.",
+        USER_NOT_FOUND: "No account found with this email.",
+        SERVER_ERROR: "Server error. Please try again later.",
+        TOO_MANY_ATTEMPTS: "Too many login attempts. Please try again later."
+      };
+
+      const backendError = err?.response?.data;
+      const message =
+        (backendError?.error && errorMap[backendError.error]) ||
+        backendError?.message ||
+        err?.message ||
+        "Login failed. Please try again.";
+
       console.error("Login error:", err);
-      
-      // Handle specific error messages from backend
-      let errorMessage = err.message || "Login failed. Please try again.";
-      
-      if (err.response?.data) {
-        const errorData = err.response.data;
-        
-        // Map backend error codes to user-friendly messages
-        const errorMessages = {
-          'VALIDATION_ERROR': 'Please check your input and try again.',
-          'INVALID_CREDENTIALS': 'Invalid email or password.',
-          'ACCOUNT_DEACTIVATED': 'Your account has been deactivated. Please contact administrator.',
-          'USER_NOT_FOUND': 'No account found with this email.',
-          'SERVER_ERROR': 'Server error. Please try again later.',
-          'TOO_MANY_ATTEMPTS': 'Too many login attempts. Please try again later.'
-        };
-        
-        if (errorData.error && errorMessages[errorData.error]) {
-          errorMessage = errorMessages[errorData.error];
-        } else if (errorData.message) {
-          errorMessage = errorData.message;
-        }
-        
-        // Log validation errors for debugging
-        if (errorData.details) {
-          console.log('Validation errors:', errorData.details);
-        }
-      }
-      
-      toast.error(errorMessage);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle demo login (optional - for testing)
-  const handleDemoLogin = async () => {
-    setEmail("demo@example.com");
-    setPassword("demo123");
-    
-    // Auto-submit after a delay
-    setTimeout(() => {
-      const event = new Event('submit', { cancelable: true });
-      document.querySelector('form').dispatchEvent(event);
-    }, 100);
-  };
-
-  // Handle enter key press
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !loading) {
-      handleLogin(e);
-    }
-  };
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-      <Toaster 
-        position="top-center" 
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <Toaster
+        position="top-center"
         toastOptions={{
-          duration: 4000,
+          duration: 3500,
           style: {
-            background: '#1e293b',
-            color: '#fff',
-            border: '1px solid #334155',
-          },
-          success: {
-            iconTheme: {
-              primary: '#10b981',
-              secondary: '#fff',
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
-            },
-          },
+            background: "#0f172a",
+            color: "#f8fafc",
+            border: "1px solid #1e293b"
+          }
         }}
       />
-      
-      {/* Animated background particles */}
-      <div className="absolute inset-0 overflow-hidden">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-blue-500/20 rounded-full animate-float"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 5}s`,
-            }}
-          />
-        ))}
-      </div>
 
-      {/* Login Card */}
-      <div className="relative w-full max-w-md bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl z-10">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-block p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl mb-4">
-            <Lock className="w-8 h-8 text-white" />
+      <div className="mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 py-10 lg:grid-cols-[1.2fr_460px]">
+        <section className="hidden rounded-2xl border border-slate-200 bg-white p-10 shadow-sm lg:block">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+            Trusted Workspace
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Welcome Back</h1>
-          <p className="text-slate-400 text-sm">Sign in to continue</p>
-        </div>
+          <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-900">SMA Core CRM</h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">
+            A unified workspace for sales operations, invoicing, quotations, clients, and team productivity.
+          </p>
 
-        {/* Login Form */}
-        <form onSubmit={handleLogin} className="space-y-6" onKeyPress={handleKeyPress}>
-          {/* Email Input */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                placeholder="Enter your email"
-                required
-                disabled={loading}
-                autoComplete="email"
-              />
+          <div className="mt-8 grid grid-cols-3 gap-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Pipeline</p>
+              <p className="mt-2 text-lg font-bold text-slate-900">Clients</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Finance</p>
+              <p className="mt-2 text-lg font-bold text-slate-900">Invoices</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Ops</p>
+              <p className="mt-2 text-lg font-bold text-slate-900">Reports</p>
             </div>
           </div>
+        </section>
 
-          {/* Password Input */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                placeholder="Enter your password"
-                required
-                disabled={loading}
-                autoComplete="current-password"
-              />
+        <section className="relative mx-auto w-full max-w-[460px] rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="absolute right-6 top-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
+              <img src={logo} alt="SMA logo" className="h-8 w-8 rounded-full object-cover" />
             </div>
           </div>
+          <div className="mb-7">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Sign In</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Welcome back</h2>
+            <p className="mt-2 text-sm text-slate-500">Use your work email and password to continue.</p>
+          </div>
 
-          {/* Remember Me & Forgot Password */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label htmlFor="email" className="mb-2 block text-sm font-semibold text-slate-700">Work Email</label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  id="email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => updateField("email", e.target.value)}
+                  autoComplete="email"
+                  disabled={loading}
+                  placeholder="name@company.com"
+                  className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label htmlFor="password" className="block text-sm font-semibold text-slate-700">Password</label>
+                <span className="text-xs font-medium text-slate-400">Forgot password</span>
+              </div>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => updateField("password", e.target.value)}
+                  autoComplete="current-password"
+                  disabled={loading}
+                  placeholder="Enter your password"
+                  className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-12 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  disabled={loading}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
-                id="rememberMe"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-2"
+                checked={form.rememberMe}
+                onChange={(e) => updateField("rememberMe", e.target.checked)}
                 disabled={loading}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/10"
               />
-              <label htmlFor="rememberMe" className="ml-2 text-sm text-slate-400">
-                Remember me
-              </label>
-            </div>
+              Keep me signed in
+            </label>
+
             <button
-              type="button"
-              className="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
-              onClick={() => navigate("/forgot-password")}
+              type="submit"
               disabled={loading}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
             >
-              Forgot password?
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  Sign In
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </button>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-700 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin mr-2" size={18} />
-                Signing in...
-              </>
-            ) : (
-              'Sign In'
-            )}
-          </button>
-
-          {/* Demo Login Button (Optional - remove in production) */}
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={loading}
-              className="text-sm text-slate-400 hover:text-slate-300 transition-colors duration-200"
-            >
-              Try demo account
-            </button>
-          </div>
-
-          {/* Sign Up Link */}
-          <div className="text-center pt-4 border-t border-slate-700/50">
-            <p className="text-sm text-slate-400">
-              Don't have an account?{" "}
-              <button
-                type="button"
-                className="text-blue-400 hover:text-blue-300 font-medium transition-colors duration-200"
-                onClick={() => navigate("/register")}
-                disabled={loading}
-              >
-                Sign up
-              </button>
-            </p>
-          </div>
-        </form>
+          </form>
+        </section>
       </div>
-
-      {/* Version Info */}
-      <div className="absolute bottom-4 left-4 text-xs text-slate-500">
-        v1.0.0
-      </div>
-
-      {/* Simple CSS animation */}
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.2; }
-          50% { transform: translateY(-20px) rotate(180deg); opacity: 0.5; }
-        }
-        .animate-float {
-          animation: float 10s infinite ease-in-out;
-        }
-        
-        /* Smooth focus styles */
-        input:focus {
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        
-        /* Disabled state */
-        input:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import axios from "axios";
+import apiClient from "../services/http";
 import toast, { Toaster } from "react-hot-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { jsPDF } from "jspdf";
@@ -28,8 +29,15 @@ import {
   Archive
 } from "lucide-react";
 
-// FIXED: Use correct API URL without authentication
-const BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
+// API URL aligned with backend /api prefix
+const rawBaseUrl =
+  process.env.REACT_APP_API_URL ||
+  process.env.REACT_APP_BACKEND_URL ||
+  "http://localhost:5000";
+const normalizedBaseUrl = rawBaseUrl.replace(/\/+$/, "");
+const BASE_URL = normalizedBaseUrl.endsWith("/api")
+  ? normalizedBaseUrl
+  : `${normalizedBaseUrl}/api`;
 const API_URL = `${BASE_URL}/clients`;
 
 // Confirmation Dialog Component
@@ -55,7 +63,7 @@ const ConfirmationDialog = ({
   const config = iconConfig[type];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white w-full max-w-md rounded-xl shadow-2xl animate-scaleIn">
         <div className={`p-6 border-b ${config.border} ${config.bg} rounded-t-xl`}>
           <div className="flex items-center gap-3">
@@ -131,7 +139,7 @@ const ViewClientModal = ({ client, onClose, onEdit }) => {
   if (!client) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col">
         <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
           <div className="flex items-center gap-3">
@@ -656,7 +664,7 @@ const Clients = () => {
     return JSON.stringify(formData) !== JSON.stringify(initialForm);
   }, [formData, initialForm, editingClient]);
 
-  // --- FIXED: Simple API Configuration WITHOUT Auth ---
+  // API Configuration (with auth token)
   const api = useMemo(() => {
     const instance = axios.create({
       baseURL: API_URL,
@@ -667,6 +675,10 @@ const Clients = () => {
 
     // Request interceptor for logging
     instance.interceptors.request.use((config) => {
+      const token = localStorage.getItem("token");
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
       console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`);
       if (config.data) {
         console.log('📦 Request Data:', config.data);
@@ -689,7 +701,13 @@ const Clients = () => {
         });
         
         // Show specific error messages
-        if (error.response?.status === 400) {
+        if (error.response?.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("refreshToken");
+          localStorage.removeItem("sessionId");
+          toast.error("Session expired. Please login again.");
+          window.location.href = "/login";
+        } else if (error.response?.status === 400) {
           const errorData = error.response.data;
           toast.error(`Validation Error: ${errorData.message || 'Invalid data'}`, {
             duration: 4000,
@@ -767,7 +785,7 @@ const Clients = () => {
     queryFn: async () => {
       try {
         console.log("Fetching clients from:", API_URL);
-        const res = await api.get("/");
+        const res = await apiClient.get("/clients");
         console.log("API Response:", res.data);
         
         // Handle various response formats
@@ -1110,6 +1128,8 @@ const Clients = () => {
       
       // Invalidate queries and close form
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+      setShowConfirmDialog(false);
+      setViewingClient(null);
       setShowForm(false);
       setEditingClient(null);
       setFormData(initialForm);
@@ -1490,6 +1510,7 @@ const Clients = () => {
   // Handle form submission with enhanced validation
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (clientMutation.isPending) return;
     
     // Validate form
     const validationErrors = validateForm(formData);
@@ -1516,31 +1537,12 @@ const Clients = () => {
     // Prepare clean data
     const cleanData = prepareCleanData(formData);
     
-    // Show confirmation dialog for updates
-    if (editingClient) {
-      setDialogConfig({
-        title: "Update Client",
-        message: `Are you sure you want to update ${cleanData.name}? All changes will be saved immediately.`,
-        type: "info",
-        onConfirm: () => {
-          console.log("Submitting update for client:", cleanData);
-          clientMutation.mutate(cleanData);
-        }
-      });
-      setShowConfirmDialog(true);
-    } else {
-      // For new clients, show confirmation
-      setDialogConfig({
-        title: "Create New Client",
-        message: `Create new client record for ${cleanData.name}?`,
-        type: "success",
-        onConfirm: () => {
-          console.log("Creating new client:", cleanData);
-          clientMutation.mutate(cleanData);
-        }
-      });
-      setShowConfirmDialog(true);
-    }
+    // Enterprise UX: submit directly and rely on pending + success/error states.
+    console.log(
+      editingClient ? "Submitting update for client:" : "Creating new client:",
+      cleanData
+    );
+    clientMutation.mutate(cleanData);
   };
 
   // --- STATISTICS ---
@@ -1558,6 +1560,7 @@ const Clients = () => {
     <div className="min-h-screen bg-gray-50 text-gray-700 font-sans antialiased">
       <Toaster 
         position="top-right"
+        containerStyle={{ top: 76, zIndex: 1200 }}
         toastOptions={{
           success: {
             duration: 3000,
@@ -2241,7 +2244,7 @@ const Clients = () => {
 
       {/* ENHANCED FORM MODAL - FIXED SCROLLING ISSUE */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <div>
@@ -2885,7 +2888,8 @@ const Clients = () => {
                       <button
                         type="button"
                         onClick={closeForm}
-                        className="flex-1 bg-gray-100 border border-gray-300 text-gray-700 py-3 rounded-lg font-bold text-sm hover:bg-gray-200 transition-all"
+                        disabled={clientMutation.isPending}
+                        className="flex-1 bg-gray-100 border border-gray-300 text-gray-700 py-3 rounded-lg font-bold text-sm hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Cancel
                       </button>
@@ -2917,7 +2921,7 @@ const Clients = () => {
 
       {/* ADVANCED FILTER MODAL */}
       {showAdvancedFilter && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-xl shadow-2xl">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900">Advanced Filters</h3>
@@ -3002,7 +3006,7 @@ const Clients = () => {
 
       {/* IMPORT MODAL */}
       {showImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-xl shadow-2xl">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900">Import Clients</h3>

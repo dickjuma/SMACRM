@@ -1,5 +1,6 @@
-import { Routes, Route, useLocation, BrowserRouter } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext"; 
+import { useAuth } from "./context/AuthContext";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -12,10 +13,20 @@ import Receipts from "./pages/Receipts";
 import EmailComposer from "./pages/EmailComposer";
 import Login from "./pages/Login";
 import UserAdmin from "./pages/UserAdmin";
+import Profile from "./pages/Profile";
+import NotFound from "./pages/NotFound";
+import Settings from "./pages/Settings";
 
 function AppContent() {
   const location = useLocation();
+  const { user } = useAuth();
   const isLoginPage = location.pathname === "/login";
+  const isAdmin = ["admin", "superadmin"].includes(String(user?.role || "").toLowerCase());
+
+  const RequireAdmin = ({ children }) => {
+    if (!isAdmin) return <Navigate to="/" replace />;
+    return children;
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#020617] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-300">
@@ -57,8 +68,11 @@ function AppContent() {
                 <Route path="/invoices" element={<Invoices />} />
                 <Route path="/invoices/new" element={<AddInvoice />} />
                 <Route path="/receipts" element={<Receipts />} />
-                <Route path="/fincomm" element={<EmailComposer />} />
-                <Route path="/useradmin" element={<UserAdmin />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/fincomm" element={<RequireAdmin><EmailComposer /></RequireAdmin>} />
+                <Route path="/useradmin" element={<RequireAdmin><UserAdmin /></RequireAdmin>} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </div>
           </div>

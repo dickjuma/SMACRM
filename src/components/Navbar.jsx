@@ -1,176 +1,274 @@
-import { useState, useEffect } from "react";
-import { Shield, LogOut, Sun, Moon, Clock, ChevronDown, User, Activity, Bell, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  Bell,
+  ChevronDown,
+  LogOut,
+  Moon,
+  Search,
+  Settings,
+  Shield,
+  Sun,
+  User,
+  Users
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import api from "../services/http";
+import { getRouteSearchIndexForRole } from "./navigationConfig";
+import { getInitials, resolveAvatarUrl } from "../utils/avatar";
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const role = user?.role || "user";
+  const isAdmin = role === "admin" || role === "superadmin";
+  const location = useLocation();
   const navigate = useNavigate();
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [seconds, setSeconds] = useState(0);
+  const profileRef = useRef(null);
+  const notificationRef = useRef(null);
 
-  // --- THEME LOGIC ---
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    emailNotifications: true,
+    invoicePaid: true,
+    invoiceOverdue: true,
+    newClientCreated: true
+  });
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme_dark");
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const profileItems = useMemo(() => {
+    const items = [{ label: "Profile", to: "/profile", icon: <User size={15} /> }];
+    if (isAdmin) items.push({ label: "User Management", to: "/useradmin", icon: <Users size={15} /> });
+    items.push({ label: "Settings", to: "/settings", icon: <Settings size={15} /> });
+    return items;
+  }, [isAdmin]);
+
   useEffect(() => {
     const root = window.document.documentElement;
-    isDarkMode ? root.classList.add('dark') : root.classList.remove('dark');
+    isDarkMode ? root.classList.add("dark") : root.classList.remove("dark");
     localStorage.setItem("theme_dark", JSON.stringify(isDarkMode));
   }, [isDarkMode]);
 
-  // --- SESSION COUNTER ---
   useEffect(() => {
-    const timer = setInterval(() => setSeconds(prev => prev + 1), 1000);
-    return () => clearInterval(timer);
+    const handleOutsideClick = (event) => {
+      if (profileRef.current && !profileRef.current.contains(event.target)) setProfileOpen(false);
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) setNotificationOpen(false);
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  const formatTime = (totalSeconds) => {
-    const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-    const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-    const s = (totalSeconds % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
+  useEffect(() => {
+    setProfileOpen(false);
+    setNotificationOpen(false);
+  }, [location.pathname]);
+
+  const fetchNotifications = async () => {
+    if (!isAdmin) {
+      setNotifications([]);
+      return;
+    }
+
+    try {
+      setNotificationsLoading(true);
+      const [activityResponse, settingsResponse] = await Promise.all([
+        api.get("/admin/activity", { params: { limit: 30 } }),
+        api.get("/settings")
+      ]);
+
+      const prefs = settingsResponse?.data?.data?.notifications || {};
+      setNotificationPrefs((prev) => ({ ...prev, ...prefs }));
+
+      const rows = activityResponse?.data?.notifications || [];
+      const filteredRows = rows.filter((item) => {
+        if (!prefs.emailNotifications) return false;
+
+        const message = String(item?.message || "").toLowerCase();
+        const moduleName = String(item?.module || "").toLowerCase();
+
+        if (!prefs.newClientCreated && moduleName === "clients" && item?.actionType === "create") return false;
+        if (!prefs.invoicePaid && message.includes("paid")) return false;
+        if (!prefs.invoiceOverdue && message.includes("overdue")) return false;
+
+        return true;
+      });
+
+      setNotifications(filteredRows);
+    } catch (error) {
+      setNotifications([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    fetchNotifications();
+    const timer = setInterval(fetchNotifications, 20000);
+    return () => clearInterval(timer);
+  }, [isAdmin]);
+
+  const unreadCount = notifications.length;
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return;
+
+    const match = getRouteSearchIndexForRole(role).find((route) => route.label.toLowerCase().includes(query));
+    if (match) {
+      navigate(match.link);
+      setSearchQuery("");
+    }
   };
 
   return (
-    <nav className="sticky top-0 z-[60] w-full border-b transition-all duration-300 bg-white/80 dark:bg-[#020617]/80 border-slate-200 dark:border-slate-800/60 backdrop-blur-xl">
-      {/* The 'max-w-[1600px]' matches your App.js container.
-          The 'px-4 md:px-8' ensures it doesn't hug the edges on small screens.
-      */}
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
-        
-        {/* LEFT: BRAND (Visible only on Desktop to avoid clutter with Sidebar toggle on Mobile) */}
-        <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-3 group cursor-pointer" onClick={() => navigate('/')}>
-            <div className="bg-indigo-600 p-1.5 rounded-lg shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-sm font-black tracking-tighter dark:text-white uppercase">SMA.CORE</span>
+    <header className="sticky top-0 z-[90] border-b border-slate-200 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-[#0F172A]/95">
+      <div className="mx-auto flex h-16 w-full max-w-[1800px] items-center gap-3 px-4 md:px-6">
+        <button
+          onClick={() => navigate("/")}
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
+            <Shield size={16} />
           </div>
-          
-          {/* MOBILE SEARCH ICON (Visible only on mobile) */}
-          <button className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg">
-            <Search size={20} />
-          </button>
-        </div>
+          <div className="text-left">
+            <p className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">SMA Core</p>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Enterprise Console</p>
+          </div>
+        </button>
 
-        {/* CENTER: SEARCH BAR (Desktop Only) */}
-        <div className="hidden lg:flex flex-1 max-w-md mx-8">
-           <div className="relative w-full group">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-             <input 
-              type="text" 
-              placeholder="Search financials or clients..." 
-              className="w-full bg-slate-100 dark:bg-white/5 border-transparent focus:bg-white dark:focus:bg-slate-900 border focus:border-indigo-500/50 rounded-xl py-2 pl-10 pr-4 text-xs font-medium outline-none transition-all"
-             />
-           </div>
-        </div>
-
-        {/* RIGHT: ACTIONS & PROFILE */}
-        <div className="flex items-center gap-2 md:gap-4">
-          
-          {/* NOTIFICATIONS */}
-          <button className="relative p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors group">
-            <Bell size={18} className="group-hover:rotate-12 transition-transform" />
-            <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 border-2 border-white dark:border-[#020617] animate-pulse"></span>
-          </button>
-
-          {/* THEME TOGGLE */}
-          <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-          >
-            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-
-          {/* DIVIDER (Desktop Only) */}
-          <div className="hidden md:block h-6 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1"></div>
-
-          {/* USER PROFILE DROPDOWN TRIGGER */}
+        <form onSubmit={handleSearchSubmit} className="ml-auto hidden max-w-md flex-1 md:block">
           <div className="relative">
-            <button 
-              onClick={() => setProfileOpen(!profileOpen)}
-              className={`flex items-center gap-2 md:gap-3 pl-2 py-1 pr-1 rounded-full border transition-all ${
-                profileOpen 
-                ? "bg-slate-100 dark:bg-white/10 border-indigo-500/50" 
-                : "bg-transparent border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 shadow-sm"
-              }`}
-            >
-              {/* Name - Hidden on tiny screens */}
-              <div className="hidden sm:flex flex-col items-end leading-none">
-                <span className="text-[10px] font-black dark:text-white uppercase tracking-tight">
-                  {user?.name || "Dickson Juma"}
-                </span>
-                <span className="text-[8px] text-indigo-500 font-bold uppercase tracking-widest mt-0.5">
-                  {user?.role || "Administrator"}
-                </span>
-              </div>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Find module (clients, invoices, receipts)"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
+        </form>
 
-              {/* Avatar */}
-              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold shadow-inner">
-                {user?.name?.charAt(0) || "D"}
-              </div>
-              <ChevronDown size={14} className={`text-slate-500 transition-transform duration-300 ${profileOpen && 'rotate-180'}`} />
+        <button
+          onClick={() => setIsDarkMode((prev) => !prev)}
+          className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          title="Toggle theme"
+        >
+          {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
+        {isAdmin && (
+          <div className="relative" ref={notificationRef}>
+            <button
+              onClick={() => setNotificationOpen((prev) => !prev)}
+              className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              title="Notifications"
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-rose-500 px-1.5 text-center text-[10px] font-bold text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </button>
 
-            {/* DROPDOWN MENU */}
-            {profileOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setProfileOpen(false)}></div>
-                <div className="absolute right-0 mt-3 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl z-20 dark:border-slate-800 dark:bg-[#0B1120] animate-in fade-in slide-in-from-top-2 duration-200">
-                  
-                  {/* HEADER: Identity */}
-                  <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">
-                        <User size={20} />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-black dark:text-white uppercase tracking-tight">
-                          {user?.name || "Dickson Juma"}
-                        </span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[160px]">
-                          {user?.email || "dickson.j@sma-core.io"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* BODY: Status and Counter */}
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        <Activity size={12} className="text-emerald-500 animate-pulse" />
-                        Session Live
-                      </div>
-                      <span className="text-[10px] font-mono font-black text-indigo-500">{formatTime(seconds)}</span>
-                    </div>
-                    
-                    {/* Progress Bar (Purely Visual for 'Cool' factor) */}
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                       <div className="bg-indigo-500 h-full w-2/3 rounded-full animate-pulse"></div>
-                    </div>
-                  </div>
-
-                  {/* FOOTER: Logout */}
-                  <div className="p-2 border-t border-slate-100 dark:border-slate-800">
-                    <button 
-                      onClick={() => { logout(); navigate("/login"); }}
-                      className="flex w-full items-center justify-center gap-3 rounded-xl py-3 text-[10px] font-black uppercase tracking-[0.2em] text-red-500 hover:bg-red-500/10 transition-all group"
-                    >
-                      <LogOut size={14} className="group-hover:-translate-x-1 transition-transform" />
-                      Terminate Session
-                    </button>
-                  </div>
+            {notificationOpen && (
+              <div className="absolute right-0 mt-2 max-h-[520px] w-[400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">Admin Notifications</p>
+                  <button
+                    onClick={fetchNotifications}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-500"
+                  >
+                    Refresh
+                  </button>
                 </div>
-              </>
+                <div className="max-h-[460px] overflow-y-auto">
+                  {notificationsLoading && (
+                    <p className="px-4 py-3 text-sm text-slate-500">Loading notifications...</p>
+                  )}
+                  {!notificationsLoading && notifications.length === 0 && (
+                    <p className="px-4 py-3 text-sm text-slate-500">No recent notifications.</p>
+                  )}
+                  {!notificationsLoading &&
+                    notifications.map((item) => (
+                      <div key={item.id} className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.message}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+                          <span className="rounded bg-slate-100 px-2 py-0.5 dark:bg-slate-800">{item.user || item.actor || "System"}</span>
+                          <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                            {item.actionType || "activity"}
+                          </span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 dark:bg-slate-800">{item.module || "system"}</span>
+                          <span>{item.timeAgo}</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
             )}
           </div>
+        )}
+
+        <div className="relative" ref={profileRef}>
+          <button
+            onClick={() => setProfileOpen((prev) => !prev)}
+            className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            {resolveAvatarUrl(user?.avatar) ? (
+              <img
+                src={resolveAvatarUrl(user?.avatar)}
+                alt={user?.name || "Profile"}
+                className="h-8 w-8 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white dark:bg-slate-700">
+                {getInitials(user?.name)}
+              </div>
+            )}
+            <div className="hidden text-left sm:block">
+              <p className="text-xs font-semibold text-slate-900 dark:text-white">{user?.name || "User"}</p>
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{user?.role || "Account"}</p>
+            </div>
+            <ChevronDown size={14} className="text-slate-500" />
+          </button>
+
+          {profileOpen && (
+            <div className="absolute right-0 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+              {profileItems.map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => navigate(item.to)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  logout();
+                  navigate("/login");
+                }}
+                className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+              >
+                <LogOut size={15} />
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </div>
-    </nav>
+    </header>
   );
 };
 

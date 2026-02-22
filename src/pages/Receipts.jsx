@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
+import api from "../services/http";
 import { useReactToPrint } from "react-to-print";
 import toast, { Toaster } from "react-hot-toast";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { getDocumentSettings, mergeAppSettings } from "../utils/documentSettings";
 import {
   Search, FileSearch, Phone, Printer, Download, ArrowLeft, ShieldCheck,
   Globe, Mail, MapPin, CheckCircle2, Filter,
@@ -21,56 +22,7 @@ import {
   FileBarChart, FileStack, FileCode, FileImage
 } from "lucide-react";
 
-// API Config - Use receipts endpoint
-const BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
-const API_URL = `${BASE_URL}/receipts`;
-
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  }
-});
-
-// Request interceptor
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
-  return config;
-}, (error) => Promise.reject(error));
-
-// Response interceptor
-api.interceptors.response.use(
-  (response) => {
-    console.log(`✅ ${response.status} ${response.config.url}`, response.data);
-    return response;
-  },
-  (error) => {
-    console.error(`❌ ${error.response?.status || 'Network'} Error:`, {
-      url: error.config?.url,
-      message: error.message,
-      data: error.response?.data
-    });
-    
-    if (error.response?.status === 401) {
-      toast.error("Session expired. Please login again.");
-      localStorage.removeItem("token");
-      window.location.href = "/login";
-    } else if (error.response?.status === 403) {
-      toast.error("Access denied. Insufficient permissions.");
-    } else if (error.response?.status === 404) {
-      toast.error("Resource not found.");
-    } else if (error.response?.status === 500) {
-      toast.error("Server error. Please try again later.");
-    } else if (!error.response) {
-      toast.error("Network error. Please check your connection.");
-    }
-    
-    return Promise.reject(error);
-  }
-);
+const API_URL = "/receipts";
 
 // Helper function to extract data
 const extractData = (response) => {
@@ -96,6 +48,11 @@ const fetchReceipts = async (params = {}) => {
 const fetchReceiptStats = async () => {
   const response = await api.get(`${API_URL}/stats`);
   return response.data.data || response.data || {};
+};
+
+const fetchAppSettings = async () => {
+  const response = await api.get("/settings", { params: { _t: Date.now() } });
+  return mergeAppSettings(response.data?.data || {});
 };
 
 // Constants
@@ -185,6 +142,19 @@ const Receipts = () => {
     queryFn: fetchReceiptStats,
     staleTime: 30000,
   });
+
+  const { data: appSettings } = useQuery({
+    queryKey: ["app-settings"],
+    queryFn: fetchAppSettings,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const receiptDocSettings = useMemo(
+    () => getDocumentSettings(appSettings, "receipt"),
+    [appSettings]
+  );
 
   const calculateStats = useCallback((data) => {
     if (!data || data.length === 0) {
@@ -584,6 +554,7 @@ const Receipts = () => {
     <div className="min-h-screen bg-gradient-to-br from-white to-blue-50 text-slate-800 font-sans antialiased">
       <Toaster 
         position="top-right"
+        containerStyle={{ top: 76, zIndex: 1200 }}
         toastOptions={{
           success: {
             duration: 3000,
@@ -999,9 +970,9 @@ const Receipts = () => {
         </div>
 
         {/* Content Area */}
-        <div className="flex h-[calc(100vh-280px)]">
+        <div className="flex h-[calc(100vh-280px)] min-w-0 gap-4 md:gap-6 overflow-hidden">
           {/* Left Panel - Receipts List */}
-          <div className={`${isMobileList ? 'block' : 'hidden'} md:block w-full md:w-[400px] bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden mr-6`}>
+          <div className={`${isMobileList ? 'block' : 'hidden'} md:block w-full md:w-[400px] shrink-0 bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden`}>
             <div className="h-full flex flex-col">
               <div className="p-4 border-b border-blue-100 bg-blue-50">
                 <div className="flex items-center justify-between">
@@ -1098,27 +1069,27 @@ const Receipts = () => {
           </div>
           
           {/* Right Panel - Receipt Preview */}
-          <div className={`${!isMobileList ? 'block' : 'hidden'} md:block flex-1 bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden`}>
+          <div className={`${!isMobileList ? 'block' : 'hidden'} md:block flex-1 min-w-0 bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden`}>
             {selectedReceipt ? (
               <>
                 <div className="h-full flex flex-col">
-                  <div className="p-4 border-b border-blue-100 bg-blue-50 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="p-3 sm:p-4 border-b border-blue-100 bg-blue-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <button
                         onClick={() => setIsMobileList(true)}
                         className="md:hidden p-1.5 text-slate-600 hover:text-blue-600"
                       >
                         <ArrowLeft size={20} />
                       </button>
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="font-semibold text-slate-900">Receipt Preview</h3>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-slate-500 truncate">
                           {selectedReceipt.receiptNumber || `RCT-${selectedReceipt._id?.slice(-8).toUpperCase()}`}
                         </p>
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
                       <button
                         onClick={() => setShowSensitiveData(!showSensitiveData)}
                         className="p-1.5 text-slate-400 hover:text-blue-600"
@@ -1157,41 +1128,43 @@ const Receipts = () => {
                     </div>
                   </div>
                   
-                  <div className="flex-1 overflow-y-auto p-6" ref={printRef}>
+                  <div className="flex-1 overflow-y-auto p-3 sm:p-6" ref={printRef}>
                     {/* Receipt Content */}
                     <div className="max-w-4xl mx-auto">
                       {/* Header */}
-                      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-8 mb-6 text-white">
+                      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-4 sm:p-8 mb-6 text-white">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                           <div className="space-y-3">
                             <div className="flex items-center gap-3">
                               <div className="bg-white p-2 rounded-lg">
                                 <ShieldCheck className="w-6 h-6 text-blue-600" />
                               </div>
-                              <div>
-                                <h1 className="text-2xl font-bold">SMA TECHNOLOGIES</h1>
-                                <p className="text-blue-100 text-sm">Official Payment Receipt</p>
+                              <div className="min-w-0">
+                                <h1 className="text-xl sm:text-2xl font-bold break-words">{receiptDocSettings.companyName}</h1>
+                                <p className="text-blue-100 text-sm">{receiptDocSettings.tagline}</p>
                               </div>
                             </div>
                             
                             <div className="space-y-1 text-sm text-blue-100">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 break-all">
                                 <Phone size={14} />
-                                <span>+254 719 832 719</span>
+                                <span>{receiptDocSettings.phone}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 break-all">
                                 <Mail size={14} />
-                                <span>receipts@smacore.co.ke</span>
+                                <span>{receiptDocSettings.email}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 break-all">
                                 <Globe size={14} />
-                                <span>www.smacore.co.ke</span>
+                                <span>{receiptDocSettings.website}</span>
                               </div>
                             </div>
                           </div>
                           
                           <div className="text-left md:text-right">
-                            <h2 className="text-3xl font-bold mb-2">RECEIPT</h2>
+                            <h2 className="text-2xl sm:text-3xl font-bold mb-2">
+                              {(receiptDocSettings.title || "RECEIPT").toUpperCase()}
+                            </h2>
                             <div className="space-y-1">
                               <p className="text-sm font-semibold">Receipt #: {selectedReceipt.receiptNumber || `RCT-${selectedReceipt._id?.slice(-8).toUpperCase()}`}</p>
                               <p className="text-sm">Date: {new Date(selectedReceipt.paymentDate || selectedReceipt.date).toLocaleDateString()}</p>
@@ -1255,7 +1228,7 @@ const Receipts = () => {
                       <div className="mb-8">
                         <h3 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wider">Transaction Items</h3>
                         <div className="overflow-x-auto">
-                          <table className="w-full border-collapse">
+                          <table className="w-full min-w-[640px] border-collapse">
                             <thead>
                               <tr className="bg-blue-50 border-b border-blue-100">
                                 <th className="text-left p-3 font-semibold text-slate-700">Description</th>
@@ -1333,9 +1306,13 @@ const Receipts = () => {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center md:text-left">
                           <div>
                             <h4 className="font-semibold text-slate-900 mb-2">Payment Information</h4>
-                            <p className="text-sm text-slate-600">Account: 1234567890</p>
-                            <p className="text-sm text-slate-600">Bank: SMA Bank Ltd</p>
-                            <p className="text-sm text-slate-600">SWIFT: SMAKENA</p>
+                            <p className="text-sm text-slate-600">{receiptDocSettings.addressLine1}</p>
+                            <p className="text-sm text-slate-600">{receiptDocSettings.addressLine2}</p>
+                            {!!receiptDocSettings.taxIdValue && (
+                              <p className="text-sm text-slate-600">
+                                {receiptDocSettings.taxIdLabel}: {receiptDocSettings.taxIdValue}
+                              </p>
+                            )}
                           </div>
                           
                           <div>
@@ -1346,15 +1323,15 @@ const Receipts = () => {
                             </div>
                             <div className="flex items-center gap-2 justify-center md:justify-start mt-1">
                               <Shield className="w-4 h-4 text-blue-500" />
-                              <span className="text-sm text-slate-600">Digitally Signed</span>
+                              <span className="text-sm text-slate-600">{receiptDocSettings.footerNote}</span>
                             </div>
                           </div>
                           
                           <div>
                             <h4 className="font-semibold text-slate-900 mb-2">Contact</h4>
-                            <p className="text-sm text-slate-600">receipts@smacore.co.ke</p>
-                            <p className="text-sm text-slate-600">+254 719 832 719</p>
-                            <p className="text-sm text-slate-600">www.smacore.co.ke</p>
+                            <p className="text-sm text-slate-600">{receiptDocSettings.email}</p>
+                            <p className="text-sm text-slate-600">{receiptDocSettings.phone}</p>
+                            <p className="text-sm text-slate-600">{receiptDocSettings.website}</p>
                           </div>
                         </div>
                       </div>

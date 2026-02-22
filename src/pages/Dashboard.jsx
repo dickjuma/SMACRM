@@ -1,207 +1,399 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import axios from "axios";
+import api from "../services/http";
 import { useQuery } from "@tanstack/react-query";
-import { 
-  Users, FileText, FileCheck, CreditCard, 
-  RefreshCcw, ArrowUpRight, ShieldCheck, Activity, BarChart3
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  BarChart3,
+  CheckCircle2,
+  CreditCard,
+  FileCheck,
+  FileText,
+  Mail,
+  RefreshCcw,
+  ShieldCheck,
+  TrendingUp,
+  Users
 } from "lucide-react";
-import { 
-  ResponsiveContainer, BarChart, Bar, Cell, CartesianGrid, XAxis, YAxis, Tooltip 
-} from 'recharts';
-
-const api = axios.create({
-  baseURL: process.env.REACT_APP_BACKEND_URL,
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token"); 
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      localStorage.removeItem("token");
-      window.location.href = "/login"; 
-    }
-    return Promise.reject(error);
-  }
-);
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Legend
+} from "recharts";
 
 const fetchDashboardStats = async () => {
   const { data } = await api.get("/dashboard/stats");
-  return data;
+  return data?.data || data?.stats || {};
 };
 
+const formatCurrency = (value) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0
+  }).format(Number(value || 0));
+
+const formatNumber = (value) => Number(value || 0).toLocaleString();
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 const Dashboard = () => {
-  const [lastSync, setLastSync] = useState("");
   const [tokenChecked, setTokenChecked] = useState(false);
+  const [graphEntity, setGraphEntity] = useState("invoices");
   const token = localStorage.getItem("token");
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["dashboardStats"],
     queryFn: fetchDashboardStats,
-    enabled: !!token,
+    enabled: !!token
   });
-
-  useEffect(() => {
-    if (data) setLastSync(new Date().toLocaleTimeString());
-  }, [data]);
 
   useEffect(() => {
     setTokenChecked(true);
   }, []);
 
+  const stats = useMemo(
+    () => ({
+      clients: data?.clients || 0,
+      quotations: data?.quotations || 0,
+      invoices: data?.invoices || 0,
+      receipts: data?.receipts || 0,
+      emailsSent: data?.emailsSent || 0,
+      activeClients: data?.activeClients || 0,
+      invoiceTurnover: data?.invoiceTurnover || 0,
+      quotationTurnover: data?.quotationTurnover || 0,
+      receiptTurnover: data?.receiptTurnover || 0,
+      outstandingInvoiceAmount: data?.outstandingInvoiceAmount || 0,
+      collectionRate: data?.collectionRate || 0,
+      invoiceGrowth: data?.invoiceGrowth || 0,
+      recentActivity: data?.recentActivity || {},
+      statusBreakdown: data?.invoiceStatusBreakdown || {}
+    }),
+    [data]
+  );
+
+  const collectionRateSafe = clamp(Number(stats.collectionRate || 0), 0, 100);
+  const overdueShare = stats.invoices > 0 ? ((stats.statusBreakdown.overdue || 0) / stats.invoices) * 100 : 0;
+  const activeClientRate = stats.clients > 0 ? (stats.activeClients / stats.clients) * 100 : 0;
+
+  const volumeData = [
+    { name: "Clients", value: stats.clients, color: "#3B82F6" },
+    { name: "Quotes", value: stats.quotations, color: "#10B981" },
+    { name: "Invoices", value: stats.invoices, color: "#F59E0B" },
+    { name: "Receipts", value: stats.receipts, color: "#6366F1" },
+    { name: "Emails", value: stats.emailsSent, color: "#06B6D4" }
+  ];
+
+  const overallDistributionData = [
+    { name: "Clients", value: stats.clients, fill: "#3B82F6" },
+    { name: "Active Clients", value: stats.activeClients, fill: "#8B5CF6" },
+    { name: "Quotations", value: stats.quotations, fill: "#10B981" },
+    { name: "Invoices", value: stats.invoices, fill: "#F59E0B" },
+    { name: "Receipts", value: stats.receipts, fill: "#6366F1" },
+    { name: "Emails", value: stats.emailsSent, fill: "#06B6D4" }
+  ];
+
+  const graphConfig = useMemo(() => {
+    const config = {
+      invoices: {
+        title: "Invoices",
+        color: "#1D4ED8",
+        data: [
+          { name: "Total Count", value: stats.invoices },
+          { name: "Turnover", value: stats.invoiceTurnover },
+          { name: "New (30d)", value: stats.recentActivity.newInvoicesLast30Days || 0 },
+          { name: "Paid", value: stats.statusBreakdown.paid || 0 },
+          { name: "Overdue", value: stats.statusBreakdown.overdue || 0 },
+          { name: "Partial", value: stats.statusBreakdown.partial || 0 }
+        ]
+      },
+      receipts: {
+        title: "Receipts",
+        color: "#059669",
+        data: [
+          { name: "Total Count", value: stats.receipts },
+          { name: "Turnover", value: stats.receiptTurnover },
+          { name: "New (30d)", value: stats.recentActivity.newReceiptsLast30Days || 0 }
+        ]
+      },
+      quotations: {
+        title: "Quotations",
+        color: "#7C3AED",
+        data: [
+          { name: "Total Count", value: stats.quotations },
+          { name: "Value", value: stats.quotationTurnover },
+          { name: "New (30d)", value: stats.recentActivity.newQuotationsLast30Days || 0 }
+        ]
+      }
+    };
+
+    return config[graphEntity] || config.invoices;
+  }, [graphEntity, stats]);
+
   if (!token && tokenChecked) {
     return <Navigate to="/login" replace />;
   }
 
-  const comparisonData = [
-    { name: 'Clients', value: data?.clients || 0, color: '#3B82F6' },
-    { name: 'Quotes', value: data?.quotations || 0, color: '#10B981' },
-    { name: 'Invoices', value: data?.invoices || 0, color: '#F59E0B' },
-    { name: 'Receipts', value: data?.receipts || 0, color: '#6366F1' },
+  const activity30DayData = [
+    { name: "Clients", value: stats.recentActivity.newClientsLast30Days || 0, color: "#3B82F6" },
+    { name: "Invoices", value: stats.recentActivity.newInvoicesLast30Days || 0, color: "#F59E0B" },
+    { name: "Quotations", value: stats.recentActivity.newQuotationsLast30Days || 0, color: "#7C3AED" },
+    { name: "Receipts", value: stats.recentActivity.newReceiptsLast30Days || 0, color: "#10B981" },
+    { name: "Emails", value: stats.recentActivity.newEmailsLast30Days || 0, color: "#06B6D4" }
   ];
 
-  const cards = [
-    { id: 1, label: "Total Clients", val: data?.clients || 0, icon: <Users />, color: "text-blue-600", bg: "bg-blue-50", link: "/clients" },
-    { id: 2, label: "Quotations", val: data?.quotations || 0, icon: <FileText />, color: "text-emerald-600", bg: "bg-emerald-50", link: "/quotations" },
-    { id: 3, label: "Invoices", val: data?.invoices || 0, icon: <FileCheck />, color: "text-amber-600", bg: "bg-amber-50", link: "/invoices" },
-    { id: 4, label: "Receipts", val: data?.receipts || 0, icon: <CreditCard />, color: "text-indigo-600", bg: "bg-indigo-50", link: "/receipts" },
+  const alerts = [
+    {
+      id: "outstanding",
+      active: stats.outstandingInvoiceAmount > stats.invoiceTurnover * 0.35 && stats.invoiceTurnover > 0,
+      title: "Outstanding exposure is high",
+      detail: `Outstanding is ${formatCurrency(stats.outstandingInvoiceAmount)} against ${formatCurrency(stats.invoiceTurnover)} invoiced.`
+    },
+    {
+      id: "overdue",
+      active: overdueShare > 20,
+      title: "Overdue invoice ratio above threshold",
+      detail: `Overdue ratio is ${overdueShare.toFixed(1)}% of total invoices.`
+    },
+    {
+      id: "collection",
+      active: collectionRateSafe < 60,
+      title: "Collection efficiency needs attention",
+      detail: `Collection rate is ${collectionRateSafe.toFixed(1)}%.`
+    }
+  ].filter((item) => item.active);
+
+  const kpiCards = [
+    { id: "clients", label: "Total Clients", value: formatNumber(stats.clients), meta: `${activeClientRate.toFixed(1)}% active ratio`, icon: <Users />, tone: "text-slate-700 bg-slate-50 border-slate-200", accent: "bg-slate-500", link: "/clients" },
+    { id: "quotes", label: "Quotations", value: formatNumber(stats.quotations), meta: `${formatCurrency(stats.quotationTurnover)} quoted value`, icon: <FileText />, tone: "text-slate-700 bg-slate-50 border-slate-200", accent: "bg-slate-500", link: "/quotations" },
+    { id: "invoices", label: "Invoices", value: formatNumber(stats.invoices), meta: `${formatCurrency(stats.invoiceTurnover)} invoiced`, icon: <FileCheck />, tone: "text-slate-700 bg-slate-50 border-slate-200", accent: "bg-slate-500", link: "/invoices" },
+    { id: "receipts", label: "Receipts", value: formatNumber(stats.receipts), meta: `${formatCurrency(stats.receiptTurnover)} collected`, icon: <CreditCard />, tone: "text-slate-700 bg-slate-50 border-slate-200", accent: "bg-slate-500", link: "/receipts" },
+    { id: "emails", label: "Emails Sent", value: formatNumber(stats.emailsSent), meta: `${formatNumber(stats.recentActivity.newEmailsLast30Days)} in last 30 days`, icon: <Mail />, tone: "text-slate-700 bg-slate-50 border-slate-200", accent: "bg-slate-500", link: "/fincomm" },
+    { id: "active", label: "Active Clients", value: formatNumber(stats.activeClients), meta: `${collectionRateSafe.toFixed(1)}% collection rate`, icon: <Activity />, tone: "text-slate-700 bg-slate-50 border-slate-200", accent: "bg-slate-500", link: "/clients" }
   ];
 
   return (
-    // Changed h-screen to min-h-screen to allow mobile scrolling
-    <div className="flex flex-col min-h-screen bg-[#F8FAFC] font-sans pb-10 md:pb-0">
-      
-      {/* Header - Responsive padding & size */}
-      <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 shrink-0 z-10 sticky top-0">
-        <div className="flex items-center gap-3 md:gap-4">
-          <div className="w-9 h-9 md:w-10 md:h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-            <ShieldCheck className="text-indigo-400 w-5 h-5 md:w-6 md:h-6" />
+    <div className="min-h-screen bg-[#F8FAFC] pb-10">
+      <header className="sticky top-0 z-20 h-20 border-b border-slate-200 bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 md:px-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
+              <ShieldCheck className="h-5 w-5 text-indigo-300" />
+            </div>
+            <div>
+              <h1 className="text-sm font-black uppercase tracking-tight text-slate-900 md:text-lg">Executive Finance Dashboard</h1>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">SMA Performance Office</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-sm md:text-lg font-black text-slate-900 tracking-tight uppercase">Enterprise Ledger</h1>
-            <p className="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">SMA systems</p>
-          </div>
+          <button
+            onClick={() => refetch()}
+            className="rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-white"
+          >
+            <RefreshCcw className={`h-4 w-4 text-slate-500 ${isFetching ? "animate-spin" : ""}`} />
+          </button>
         </div>
-
-        <button 
-          onClick={() => refetch()}
-          className="p-2 md:p-3 bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl hover:bg-white transition-all shadow-sm group"
-        >
-          <RefreshCcw className={`w-4 h-4 md:w-5 md:h-5 text-slate-400 group-hover:text-indigo-600 ${isFetching ? 'animate-spin' : ''}`} />
-        </button>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 p-4 md:p-8">
-        <div className="max-w-7xl mx-auto space-y-6 md:space-y-8">
-          
-          {/* Top Stats Cards - 2 Columns on Mobile, 4 on Desktop */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-            {cards.map((card) => (
-              <Link 
-                key={card.id} 
-                to={card.link} 
-                className="bg-white border border-slate-200 p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between"
+      <main className="mx-auto max-w-7xl space-y-6 px-4 pt-6 md:px-8">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {kpiCards.map((card) => (
+            <Link
+              key={card.id}
+              to={card.link}
+              className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+            >
+              <div className={`absolute left-0 top-0 h-full w-1 ${card.accent}`} />
+              <div className="flex items-start justify-between pl-2">
+                <div className={`rounded-xl border px-3 py-2 ${card.tone}`}>{React.cloneElement(card.icon, { className: "h-5 w-5" })}</div>
+                <ArrowUpRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-700" />
+              </div>
+              <p className="mt-4 pl-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{card.label}</p>
+              <p className="mt-1 pl-2 text-3xl font-black tracking-tight text-slate-900">{isLoading ? "..." : card.value}</p>
+              <p className="mt-1 pl-2 text-xs font-medium text-slate-500">{isLoading ? "Loading insights..." : card.meta}</p>
+            </Link>
+          ))}
+        </section>
+
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 md:p-7 xl:col-span-2">
+            <div className="mb-5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-indigo-500" />
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Cross-Module Activity</h3>
+              </div>
+              <span className="text-xs font-semibold text-slate-400">Reporting View</span>
+            </div>
+            <div className="h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={volumeData}>
+                  <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748B", fontSize: 11 }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748B", fontSize: 11 }} />
+                  <Tooltip
+                    cursor={{ fill: "#F8FAFC" }}
+                    contentStyle={{ borderRadius: "14px", border: "1px solid #E2E8F0", boxShadow: "0 8px 18px rgb(15 23 42 / 0.08)" }}
+                  />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={30}>
+                    {volumeData.map((item, idx) => (
+                      <Cell key={`bar-${idx}`} fill={item.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 md:p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-emerald-600" />
+              <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Overall Distribution</h3>
+            </div>
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={overallDistributionData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={58}
+                    outerRadius={88}
+                    paddingAngle={2}
+                  />
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={20} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              Clients: <strong>{formatNumber(stats.clients)}</strong> | Active: <strong>{formatNumber(stats.activeClients)}</strong> | Quotations: <strong>{formatNumber(stats.quotations)}</strong> | Invoices: <strong>{formatNumber(stats.invoices)}</strong> | Receipts: <strong>{formatNumber(stats.receipts)}</strong> | Emails: <strong>{formatNumber(stats.emailsSent)}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Financial Composition</h4>
+              <select
+                value={graphEntity}
+                onChange={(e) => setGraphEntity(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 outline-none focus:border-indigo-500"
               >
-                <div className="flex justify-between items-start mb-4">
-                  <div className={`${card.bg} ${card.color} p-2 md:p-3 rounded-xl`}>
-                    {/* Scale icons for mobile */}
-                    {React.cloneElement(card.icon, { className: "w-4 h-4 md:w-6 md:h-6" })}
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 md:w-5 md:h-5 text-slate-200 group-hover:text-indigo-500" />
-                </div>
-                <div>
-                  <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{card.label}</p>
-                  <h2 className="text-xl md:text-3xl font-black text-slate-900 tracking-tighter">
-                    {isLoading ? "..." : card.val.toLocaleString()}
-                  </h2>
-                </div>
-              </Link>
-            ))}
+                <option value="invoices">Invoices</option>
+                <option value="receipts">Receipts</option>
+                <option value="quotations">Quotations</option>
+              </select>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Showing {graphConfig.title.toLowerCase()} count, money value, and recent activity.
+            </p>
+            <div className="mt-4 h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={graphConfig.data} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
+                  <XAxis type="number" tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: "#334155", fontSize: 11 }} axisLine={false} tickLine={false} width={130} />
+                  <Tooltip
+                    formatter={(val, _name, item) => {
+                      const metric = String(item?.payload?.name || "").toLowerCase();
+                      const moneyMetric = metric.includes("turnover") || metric.includes("value");
+                      return moneyMetric ? formatCurrency(val) : formatNumber(val);
+                    }}
+                  />
+                  <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                    {graphConfig.data.map((item, idx) => (
+                      <Cell key={`mix-${idx}`} fill={graphConfig.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          {/* Charts & Status Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-            
-            {/* Comparison Bar Chart - Scaled padding for mobile */}
-            <div className="bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] p-5 md:p-8 shadow-sm">
-              <div className="flex items-center gap-3 mb-6 md:mb-8">
-                <BarChart3 className="text-indigo-500 w-5 h-5" />
-                <h3 className="text-xs md:text-sm font-black text-slate-900 uppercase tracking-widest">Volume Distribution</h3>
-              </div>
-              <div className="h-[250px] md:h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={comparisonData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
-                    <Tooltip 
-                      cursor={{fill: '#f8fafc'}}
-                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    />
-                    <Bar dataKey="value" radius={[6, 6, 6, 6]} barSize={30}>
-                      {comparisonData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* System Status - Full width on Mobile, Cool Dark Glow */}
-            <div className="col-span-1 bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 text-white shadow-2xl shadow-indigo-200 relative overflow-hidden">
-              <div className="relative z-10 h-full flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-3 mb-6 md:mb-8">
-                    <Activity className="text-indigo-400 w-5 h-5" />
-                    <h3 className="text-xs md:text-sm font-black text-slate-400 uppercase tracking-widest">SMA Status</h3>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Risk Register</h4>
+            <div className="mt-4 space-y-3">
+              {alerts.length === 0 && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                  <div className="flex items-center gap-2 font-bold">
+                    <CheckCircle2 className="h-4 w-4" />
+                    No threshold breaches
                   </div>
-                  <div className="space-y-4 md:space-y-6">
-                    <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                      <span className="text-xs md:text-sm text-slate-400">Database Sync</span>
-                      <span className="text-xs md:text-sm font-bold text-emerald-400 flex items-center gap-2">
-                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" /> Operational
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                      <span className="text-xs md:text-sm text-slate-400">Latest Sync</span>
-                      <span className="text-xs md:text-sm font-bold">{lastSync || "Updating..."}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs md:text-sm text-slate-400">Provider</span>
-                      <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-[9px] md:text-[10px] font-black border border-indigo-500/30 uppercase">
-                        SMA SYSTEMS
-                      </span>
-                    </div>
+                  <p className="mt-1 text-xs">All monitored indicators are currently within policy range.</p>
+                </div>
+              )}
+              {alerts.map((alert) => (
+                <div key={alert.id} className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                  <div className="flex items-center gap-2 text-rose-700 text-sm font-bold">
+                    <AlertTriangle className="h-4 w-4" />
+                    {alert.title}
                   </div>
+                  <p className="mt-1 text-xs text-rose-700">{alert.detail}</p>
                 </div>
-                
-                {/* System Console Text - Shrunk for mobile */}
-                <div className="mt-8 p-3 bg-white/5 rounded-xl border border-white/10 text-[9px] font-mono text-slate-500 leading-relaxed">
-                  SYSTEM_DASHBOARD_V4: Connection established. All ledger endpoints verified.
-                </div>
-              </div>
-              
-              {/* Animated Background Glow */}
-              <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-indigo-500/20 rounded-full blur-[80px] animate-pulse" />
-              <div className="absolute bottom-[-10%] left-[-10%] w-32 h-32 bg-emerald-500/10 rounded-full blur-[50px]" />
+              ))}
             </div>
-
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+              <p className="font-semibold text-slate-600">Management Note</p>
+              <p className="mt-1 text-slate-500">
+                Prioritize overdue recovery and maintain collections above 70% to preserve cash flow quality.
+              </p>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">30-Day Activity Summary</h4>
+            <div className="mt-4 h-[240px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={activity30DayData}>
+                  <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={26}>
+                    {activity30DayData.map((item, idx) => (
+                      <Cell key={`activity-${idx}`} fill={item.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Executive Indicators</h4>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Collection Rate</p>
+                <p className="mt-1 font-bold text-slate-900">{collectionRateSafe.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Invoice Growth (30d)</p>
+                <p className="mt-1 font-bold text-slate-900">{Number(stats.invoiceGrowth || 0).toFixed(1)}%</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Client Penetration</p>
+                <p className="mt-1 font-bold text-slate-900">{activeClientRate.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email Reach (30d)</p>
+                <p className="mt-1 font-bold text-slate-900">{formatNumber(stats.recentActivity.newEmailsLast30Days)}</p>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
-      `}} />
     </div>
   );
 };

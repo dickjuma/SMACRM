@@ -1,10 +1,13 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import axios from "axios";
+import { createPortal } from "react-dom";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { useReactToPrint } from "react-to-print";
 import toast, { Toaster } from "react-hot-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { quotationApi, clientApi, productApi } from "../services/quotationApi";
+import api from "../services/quotationApi";
+import { getDocumentSettings, mergeAppSettings } from "../utils/documentSettings";
 import { 
   Eye, Edit, Trash2, Plus, Search, Save, Hash, X, 
   ChevronRight, Activity, FileText, Globe, ShieldCheck, Phone, Mail, MapPin,
@@ -18,92 +21,37 @@ import {
   Tag, Package, Truck, ArrowUpRight, ArrowDownRight
 } from "lucide-react";
 
-// API Configuration
-const BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
-const API_URL = `${BASE_URL}/quotations`;
-const CLIENTS_API_URL = `${BASE_URL}/clients`;
-const PRODUCTS_API_URL = `${BASE_URL}/products`;
-
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  }
-});
-
-// Helper function to extract data
-const extractData = (response) => {
-  if (response.data && Array.isArray(response.data)) {
-    return response.data;
-  } else if (response.data && response.data.data) {
-    return response.data.data;
-  } else if (response.data) {
-    if (response.data.success && response.data.data !== undefined) {
-      return response.data.data;
-    }
-    return [response.data];
-  }
-  return [];
-};
-
-// API Functions
+// API Functions - using service layer
 const fetchQuotations = async (params = {}) => {
-  const response = await api.get(API_URL, { params });
-  return extractData(response);
+  return quotationApi.getQuotations(params);
 };
 
 const fetchClients = async () => {
-  try {
-    const response = await api.get(CLIENTS_API_URL);
-    const data = extractData(response);
-    console.log("Clients fetched:", data);
-    return data;
-  } catch (error) {
-    console.error("Error fetching clients:", error);
-    // Return mock data for testing
-    return [
-      {
-        _id: "1",
-        name: "John Doe",
-        email: "john@example.com",
-        phone: "+254 712 345 678"
-      },
-      {
-        _id: "2",
-        name: "Jane Smith",
-        email: "jane@example.com",
-        phone: "+254 723 456 789"
-      },
-      {
-        _id: "3",
-        name: "Acme Corporation",
-        email: "info@acme.com",
-        phone: "+254 734 567 890"
-      }
-    ];
-  }
+  return clientApi.getClients({ limit: 1000, sortBy: "name", sortOrder: "asc" });
 };
 
 const fetchProducts = async () => {
-  try {
-    const response = await api.get(PRODUCTS_API_URL);
-    return extractData(response);
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    return [];
-  }
+  return productApi.getProducts();
 };
 
 const fetchQuotationStats = async () => {
-  try {
-    const response = await api.get(`${API_URL}/stats`);
-    return response.data.data || response.data || {};
-  } catch (error) {
-    console.error("Error fetching stats:", error);
-    return {};
-  }
+  return quotationApi.getQuotationStats();
 };
+
+const fetchAppSettings = async () => {
+  const response = await api.get("/settings", { params: { _t: Date.now() } });
+  return mergeAppSettings(response.data?.data || {});
+};
+
+const normalizeClients = (source) => {
+  if (Array.isArray(source)) return source;
+  if (source && Array.isArray(source.clients)) return source.clients;
+  if (source && Array.isArray(source.data)) return source.data;
+  if (source && source.data && Array.isArray(source.data.clients)) return source.data.clients;
+  return [];
+};
+
+const getClientId = (client) => client?._id || client?.id || "";
 
 // Constants
 const CURRENCIES = [
@@ -133,12 +81,15 @@ const VALIDITY_PERIODS = [
 ];
 
 // Helper Functions
-const generateQuotationNumber = () => {
-  const prefix = "QUO";
-  const year = new Date().getFullYear().toString().slice(-2);
-  const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `${prefix}-${year}${month}-${random}`;
+const formatSuggestedDocumentNumber = (prefix, nextNumber, suffix = "") => {
+  const cleanPrefix = String(prefix || "DOC").trim().toUpperCase() || "DOC";
+  const numeric = Number(nextNumber);
+  const sequence = Number.isFinite(numeric) && numeric > 0
+    ? String(Math.floor(numeric)).padStart(6, "0")
+    : "000001";
+  const cleanSuffix = String(suffix || "").trim().toUpperCase();
+  const base = `${cleanPrefix}-${sequence}`;
+  return cleanSuffix ? `${base}-${cleanSuffix}` : base;
 };
 
 const formatCurrency = (amount, currency = "USD") => {
@@ -169,6 +120,11 @@ const calculateDaysRemaining = (expiryDate) => {
   const diffTime = expiry - today;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;
+};
+
+const normalizeStatus = (status, statusMap, fallback = "DRAFT") => {
+  const normalized = String(status || "").toUpperCase().trim();
+  return statusMap[normalized] ? normalized : fallback;
 };
 
 // Main Component
@@ -252,6 +208,14 @@ const Quotations = () => {
     staleTime: 60000,
   });
 
+  const { data: appSettings } = useQuery({
+    queryKey: ["app-settings"],
+    queryFn: fetchAppSettings,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
   // Ensure data is always an array
   const quotations = useMemo(() => {
     if (Array.isArray(quotationsData)) return quotationsData;
@@ -261,9 +225,7 @@ const Quotations = () => {
   }, [quotationsData]);
 
   const clients = useMemo(() => {
-    if (Array.isArray(clientsData)) return clientsData;
-    if (clientsData && Array.isArray(clientsData.data)) return clientsData.data;
-    return [];
+    return normalizeClients(clientsData);
   }, [clientsData]);
 
   const products = useMemo(() => {
@@ -272,9 +234,20 @@ const Quotations = () => {
     return [];
   }, [productsData]);
 
+  const quotationDocSettings = useMemo(
+    () => getDocumentSettings(appSettings, "quotation"),
+    [appSettings]
+  );
+
+  const closeQuotationEditor = () => {
+    setViewing(null);
+    setEditing(null);
+    setAdding(false);
+  };
+
   // Mutations
   const deleteMutation = useMutation({
-    mutationFn: (id) => api.delete(`${API_URL}/${id}`),
+    mutationFn: (id) => quotationApi.deleteQuotation(id),
     onSuccess: () => {
       toast.success("Quotation deleted successfully!");
       queryClient.invalidateQueries(["quotations"]);
@@ -289,17 +262,17 @@ const Quotations = () => {
     mutationFn: (data) => {
       const payload = {
         ...data,
-        client: data.client,
+        client: data.client?._id || data.client,
         items: data.items.map(item => ({
           ...item,
           product: item.product?._id || item.product
         }))
       };
-      
+
       if (data._id) {
-        return api.put(`${API_URL}/${data._id}`, payload);
+        return quotationApi.updateQuotation(data._id, payload);
       } else {
-        return api.post(API_URL, payload);
+        return quotationApi.createQuotation(payload);
       }
     },
     onSuccess: (response) => {
@@ -310,8 +283,7 @@ const Quotations = () => {
       queryClient.invalidateQueries(["quotations"]);
       queryClient.invalidateQueries(["quotation-stats"]);
       
-      setEditing(null);
-      setAdding(false);
+      closeQuotationEditor();
     },
     onError: (error) => {
       toast.error(`Save failed: ${error.message}`);
@@ -319,7 +291,7 @@ const Quotations = () => {
   });
 
   const convertMutation = useMutation({
-    mutationFn: (id) => api.post(`${API_URL}/${id}/convert-to-invoice`),
+    mutationFn: (id) => api.post(`/quotations/${id}/convert-to-invoice`),
     onSuccess: () => {
       toast.success("Quotation converted to invoice successfully!");
       queryClient.invalidateQueries(["quotations"]);
@@ -331,7 +303,7 @@ const Quotations = () => {
   });
 
   const sendEmailMutation = useMutation({
-    mutationFn: (quotationId) => api.post(`${API_URL}/${quotationId}/send-email`),
+    mutationFn: (quotationId) => api.post(`/quotations/${quotationId}/send-email`),
     onSuccess: () => {
       toast.success("Email sent successfully!");
     },
@@ -341,7 +313,7 @@ const Quotations = () => {
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: (quotationId) => api.post(`${API_URL}/${quotationId}/duplicate`),
+    mutationFn: (quotationId) => api.post(`/quotations/${quotationId}/duplicate`),
     onSuccess: (response) => {
       toast.success("Quotation duplicated successfully!");
       queryClient.invalidateQueries(["quotations"]);
@@ -499,7 +471,9 @@ const Quotations = () => {
     }
     
     if (filters.status !== "all") {
-      filtered = filtered.filter(q => q.status === filters.status);
+      filtered = filtered.filter(
+        (q) => normalizeStatus(q.status, QUOTATION_STATUSES) === filters.status
+      );
     }
     
     if (filters.dateRange !== "all") {
@@ -542,7 +516,9 @@ const Quotations = () => {
     }
     
     if (filters.client !== "all") {
-      filtered = filtered.filter(q => q.client?._id === filters.client);
+      filtered = filtered.filter(
+        (q) => (q.client?._id || q.client?.id || q.client) === filters.client
+      );
     }
     
     if (filters.amountRange !== "all") {
@@ -692,6 +668,7 @@ const Quotations = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 text-slate-700 font-sans antialiased">
       <Toaster 
         position="top-right"
+        containerStyle={{ top: 76, zIndex: 1200 }}
         toastOptions={{
           success: {
             duration: 3000,
@@ -898,11 +875,16 @@ const Quotations = () => {
                             </p>
                           </div>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                          QUOTATION_STATUSES[quote.status]?.color || 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {QUOTATION_STATUSES[quote.status]?.label || quote.status}
-                        </span>
+                        {(() => {
+                          const statusKey = normalizeStatus(quote.status, QUOTATION_STATUSES);
+                          return (
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                              QUOTATION_STATUSES[statusKey]?.color || 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {QUOTATION_STATUSES[statusKey]?.label || statusKey}
+                            </span>
+                          );
+                        })()}
                       </div>
                     ))}
                 </div>
@@ -966,7 +948,7 @@ const Quotations = () => {
                 >
                   <option value="all">All Clients</option>
                   {Array.isArray(clients) && clients.map(client => (
-                    <option key={client._id} value={client._id}>{client.name}</option>
+                    <option key={getClientId(client)} value={getClientId(client)}>{client.name}</option>
                   ))}
                 </select>
               </div>
@@ -1313,11 +1295,16 @@ const Quotations = () => {
                           </td>
                           
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase ${
-                              QUOTATION_STATUSES[quotation.status]?.color || 'bg-gray-100 text-gray-700'
-                            }`}>
-                              {QUOTATION_STATUSES[quotation.status]?.label || quotation.status}
-                            </span>
+                            {(() => {
+                              const statusKey = normalizeStatus(quotation.status, QUOTATION_STATUSES);
+                              return (
+                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase ${
+                                  QUOTATION_STATUSES[statusKey]?.color || 'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {QUOTATION_STATUSES[statusKey]?.label || statusKey}
+                                </span>
+                              );
+                            })()}
                           </td>
                           
                           <td className="px-6 py-4 text-right">
@@ -1479,11 +1466,16 @@ const Quotations = () => {
                     </div>
                     
                     <div className="flex flex-col items-end">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
-                        QUOTATION_STATUSES[quotation.status]?.color || 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {QUOTATION_STATUSES[quotation.status]?.label || quotation.status}
-                      </span>
+                      {(() => {
+                        const statusKey = normalizeStatus(quotation.status, QUOTATION_STATUSES);
+                        return (
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
+                            QUOTATION_STATUSES[statusKey]?.color || 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {QUOTATION_STATUSES[statusKey]?.label || statusKey}
+                          </span>
+                        );
+                      })()}
                       {daysRemaining !== null && daysRemaining <= 7 && daysRemaining >= 0 && (
                         <span className="text-xs text-amber-600 mt-1">{daysRemaining}d left</span>
                       )}
@@ -1561,6 +1553,7 @@ const Quotations = () => {
       {viewing && (
         <QuotationViewModal
           quotation={viewing}
+          documentSettings={quotationDocSettings}
           ref={printRef}
           onClose={() => setViewing(null)}
           onPrint={handlePrintTrigger}
@@ -1580,6 +1573,7 @@ const Quotations = () => {
           quotation={editing}
           clients={clients}
           products={products}
+          appSettings={appSettings}
           onSave={(data) => saveMutation.mutate(data)}
           onClose={() => {
             setEditing(null);
@@ -1594,6 +1588,7 @@ const Quotations = () => {
 // Enhanced Quotation View Modal
 const QuotationViewModal = React.forwardRef(({ 
   quotation, 
+  documentSettings,
   onClose, 
   onPrint, 
   onDownload, 
@@ -1604,25 +1599,27 @@ const QuotationViewModal = React.forwardRef(({
 }, ref) => {
   const totalAmount = quotation.total || (quotation.items?.reduce((acc, i) => acc + (i.total || 0), 0) || 0);
   const daysRemaining = quotation.expiryDate ? calculateDaysRemaining(quotation.expiryDate) : null;
-  const StatusIcon = QUOTATION_STATUSES[quotation.status]?.icon || FileText;
+  const docSettings = getDocumentSettings({ documents: { quotation: documentSettings } }, "quotation");
+  const statusKey = normalizeStatus(quotation.status, QUOTATION_STATUSES);
+  const StatusIcon = QUOTATION_STATUSES[statusKey]?.icon || FileText;
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
-        <div className="flex justify-between items-center p-6 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center gap-4">
+  const modalContent = (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-0 sm:p-4">
+      <div className="bg-white w-full max-w-6xl rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col h-[100dvh] sm:max-h-[95vh]">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 p-4 sm:p-6 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div className="bg-indigo-600 p-3 rounded-xl">
               <FileText className="w-6 h-6 text-white" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Quotation Details</h2>
-              <p className="text-sm text-slate-500">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">Quotation Details</h2>
+              <p className="text-xs sm:text-sm text-slate-500 truncate">
                 {quotation.quotationNumber || `QUO-${quotation._id?.slice(-8).toUpperCase()}`}
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <button
               onClick={onDuplicate}
               className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1678,7 +1675,7 @@ const QuotationViewModal = React.forwardRef(({
         
         <div className="flex-1 overflow-y-auto" ref={ref}>
           {/* Quotation Header */}
-          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-8 md:p-12 text-white">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-4 sm:p-8 md:p-12 text-white">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
               <div>
                 <div className="flex items-center gap-3 mb-4">
@@ -1686,30 +1683,32 @@ const QuotationViewModal = React.forwardRef(({
                     <ShieldCheck className="w-8 h-8 text-indigo-600" />
                   </div>
                   <div>
-                    <h1 className="text-2xl md:text-3xl font-bold">SMA TECHNOLOGIES</h1>
-                    <p className="text-slate-300 text-sm">Professional Solutions Provider</p>
+                    <h1 className="text-2xl md:text-3xl font-bold">{docSettings.companyName}</h1>
+                    <p className="text-slate-300 text-sm">{docSettings.tagline}</p>
                   </div>
                 </div>
                 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm break-all">
                     <Phone className="w-4 h-4" />
-                    <span>+254 719 832 719</span>
+                    <span>{docSettings.phone}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm break-all">
                     <Mail className="w-4 h-4" />
-                    <span>quotations@smacore.co.ke</span>
+                    <span>{docSettings.email}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm break-all">
                     <Globe className="w-4 h-4" />
-                    <span>www.smacore.co.ke</span>
+                    <span>{docSettings.website}</span>
                   </div>
                 </div>
               </div>
               
               <div className="text-left md:text-right">
                 <div className="mb-4">
-                  <p className="text-sm font-semibold text-slate-300 mb-1">QUOTATION NUMBER</p>
+                  <p className="text-sm font-semibold text-slate-300 mb-1">
+                    {(docSettings.title || "QUOTATION").toUpperCase()} NUMBER
+                  </p>
                   <p className="text-2xl font-bold font-mono">
                     {quotation.quotationNumber || `QUO-${quotation._id?.slice(-8).toUpperCase()}`}
                   </p>
@@ -1743,7 +1742,7 @@ const QuotationViewModal = React.forwardRef(({
             </div>
           </div>
           
-          <div className="p-8 md:p-12">
+          <div className="p-4 sm:p-8 md:p-12">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
               <div>
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">QUOTATION FOR</h3>
@@ -1763,12 +1762,12 @@ const QuotationViewModal = React.forwardRef(({
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">QUOTATION STATUS</h3>
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div className={`p-2 rounded-lg ${QUOTATION_STATUSES[quotation.status]?.color.split(' ')[0]}`}>
+                    <div className={`p-2 rounded-lg ${QUOTATION_STATUSES[statusKey]?.color.split(' ')[0] || "bg-gray-100"}`}>
                       <StatusIcon className="w-5 h-5" />
                     </div>
                     <div>
                       <p className="font-semibold text-slate-900">
-                        {QUOTATION_STATUSES[quotation.status]?.label || quotation.status}
+                        {QUOTATION_STATUSES[statusKey]?.label || statusKey}
                       </p>
                       <p className="text-sm text-slate-500">Current Status</p>
                     </div>
@@ -1792,7 +1791,7 @@ const QuotationViewModal = React.forwardRef(({
             {/* Items Table */}
             <div className="mb-10">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full min-w-[640px] border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
                       <th className="text-left p-4 font-semibold text-slate-700">Description</th>
@@ -1882,62 +1881,66 @@ const QuotationViewModal = React.forwardRef(({
           </div>
           
           {/* Footer */}
-          <div className="bg-slate-50 p-8 border-t border-slate-200">
+          <div className="bg-slate-50 p-4 sm:p-8 border-t border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center md:text-left">
               <div>
                 <h4 className="font-semibold text-slate-900 mb-2">Payment Information</h4>
-                <p className="text-sm text-slate-600">Account: 1234567890</p>
-                <p className="text-sm text-slate-600">Bank: SMA Bank Ltd</p>
-                <p className="text-sm text-slate-600">Branch: Nairobi CBD</p>
+                <p className="text-sm text-slate-600">{docSettings.addressLine1}</p>
+                <p className="text-sm text-slate-600">{docSettings.addressLine2}</p>
+                {!!docSettings.taxIdValue && (
+                  <p className="text-sm text-slate-600">
+                    {docSettings.taxIdLabel}: {docSettings.taxIdValue}
+                  </p>
+                )}
               </div>
               
               <div>
                 <h4 className="font-semibold text-slate-900 mb-2">Acceptance</h4>
                 <p className="text-sm text-slate-600">This quotation is valid until {quotation.expiryDate || "30 days from issue date"}</p>
-                <p className="text-sm text-slate-600">Please sign and return to accept</p>
+                <p className="text-sm text-slate-600">{docSettings.footerNote}</p>
               </div>
               
               <div>
                 <h4 className="font-semibold text-slate-900 mb-2">Contact Us</h4>
-                <p className="text-sm text-slate-600">quotations@smacore.co.ke</p>
-                <p className="text-sm text-slate-600">+254 719 832 719</p>
-                <p className="text-sm text-slate-600">www.smacore.co.ke</p>
+                <p className="text-sm text-slate-600">{docSettings.email}</p>
+                <p className="text-sm text-slate-600">{docSettings.phone}</p>
+                <p className="text-sm text-slate-600">{docSettings.website}</p>
               </div>
             </div>
           </div>
         </div>
         
-        <div className="border-t border-slate-200 p-6">
-          <div className="flex flex-wrap justify-end gap-3">
+        <div className="border-t border-slate-200 p-4 sm:p-6">
+          <div className="flex flex-wrap justify-end gap-2 sm:gap-3">
             <button
               onClick={onDuplicate}
-              className="px-5 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors"
             >
               Duplicate
             </button>
             <button
               onClick={onEmail}
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
               Send Email
             </button>
             {quotation.status !== "CONVERTED" && (
               <button
                 onClick={onConvert}
-                className="px-5 py-2.5 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
               >
                 Convert to Invoice
               </button>
             )}
             <button
               onClick={onDownload}
-              className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
             >
               Download PDF
             </button>
             <button
               onClick={onClose}
-              className="px-5 py-2.5 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
             >
               Close
             </button>
@@ -1946,30 +1949,58 @@ const QuotationViewModal = React.forwardRef(({
       </div>
     </div>
   );
+  return createPortal(modalContent, document.body);
 });
 
 // Enhanced Add/Edit Quotation Modal
-const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }) => {
-  const [form, setForm] = useState(quotation || {
-    quotationNumber: generateQuotationNumber(),
-    client: null,
-    date: new Date().toISOString().split('T')[0],
-    expiryDate: calculateExpiryDate(new Date().toISOString().split('T')[0], 30),
-    currency: "USD",
-    status: "DRAFT",
-    validity: 30,
-    tax: 0,
-    discount: 0,
-    notes: "",
-    terms: "Payment due within 30 days. Late fees may apply.",
-    items: [{ 
-      product: null, 
-      description: "", 
-      quantity: 1, 
-      price: 0, 
-      total: 0 
-    }]
+const AddEditQuotationModal = ({ quotation, clients, products, appSettings, onSave, onClose }) => {
+  const quotationDocSettings = getDocumentSettings(appSettings, "quotation");
+  const suggestedQuotationNumber = useMemo(
+    () => formatSuggestedDocumentNumber(quotationDocSettings?.prefix, quotationDocSettings?.nextNumber, quotationDocSettings?.suffix),
+    [quotationDocSettings]
+  );
+  const defaultCurrency = appSettings?.general?.defaultCurrency || "KES";
+  const defaultValidity = Number(quotationDocSettings?.paymentTermsDays) || 30;
+  const today = new Date().toISOString().split('T')[0];
+
+  const [form, setForm] = useState(() => {
+    if (quotation) {
+      return {
+        ...quotation,
+        status: normalizeStatus(quotation.status, QUOTATION_STATUSES),
+      };
+    }
+
+    return {
+      quotationNumber: suggestedQuotationNumber,
+      client: null,
+      date: today,
+      expiryDate: calculateExpiryDate(today, defaultValidity),
+      currency: defaultCurrency,
+      status: "DRAFT",
+      validity: defaultValidity,
+      tax: 0,
+      discount: 0,
+      notes: "",
+      terms: quotationDocSettings?.defaultNotes || "Payment due within 30 days. Late fees may apply.",
+      items: [{ 
+        product: null, 
+        description: "", 
+        quantity: 1, 
+        price: 0, 
+        total: 0 
+      }]
+    };
   });
+
+  useEffect(() => {
+    if (quotation) return;
+    setForm((prev) => {
+      const current = String(prev.quotationNumber || "").trim();
+      if (current) return prev;
+      return { ...prev, quotationNumber: suggestedQuotationNumber };
+    });
+  }, [quotation, suggestedQuotationNumber]);
 
   const addItem = () => {
     setForm(prev => ({
@@ -2030,14 +2061,20 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
     const payload = {
       ...form,
       total: totals.total,
-      expiryDate: form.expiryDate || calculateExpiryDate(form.date, form.validity || 30)
+      expiryDate: form.expiryDate || calculateExpiryDate(form.date, form.validity || defaultValidity)
     };
+
+    const currentNumber = String(payload.quotationNumber || "").trim().toUpperCase();
+    const suggestedNumber = String(suggestedQuotationNumber || "").trim().toUpperCase();
+    if (!quotation && (!currentNumber || currentNumber === suggestedNumber)) {
+      delete payload.quotationNumber;
+    }
     
     onSave(payload);
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center p-6 border-b border-slate-200">
           <h3 className="text-lg font-bold text-slate-900">
@@ -2057,15 +2094,21 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Quotation Number *
+                  Quotation Number
                 </label>
                 <input
                   type="text"
                   value={form.quotationNumber}
                   onChange={(e) => setForm(prev => ({ ...prev, quotationNumber: e.target.value }))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  required
+                  placeholder={quotation ? "Quotation number" : suggestedQuotationNumber}
+                  required={Boolean(quotation)}
                 />
+                {!quotation && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Suggested from settings: {suggestedQuotationNumber}
+                  </p>
+                )}
               </div>
               
               <div>
@@ -2093,11 +2136,11 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
                 Client *
               </label>
               <select
-                value={form.client?._id || ""}
+                value={getClientId(form.client)}
                 onChange={(e) => {
                   const clientId = e.target.value;
                   if (clientId) {
-                    const selectedClient = clients.find(c => c._id === clientId);
+                    const selectedClient = clients.find(c => getClientId(c) === clientId);
                     if (selectedClient) {
                       setForm(prev => ({ ...prev, client: selectedClient }));
                     }
@@ -2110,7 +2153,7 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
               >
                 <option value="">Select a client...</option>
                 {Array.isArray(clients) && clients.map(client => (
-                  <option key={client._id} value={client._id}>
+                  <option key={getClientId(client)} value={getClientId(client)}>
                     {client.name} {client.email ? `(${client.email})` : ""}
                   </option>
                 ))}
@@ -2154,7 +2197,7 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
                     setForm(prev => ({ 
                       ...prev, 
                       date: e.target.value,
-                      expiryDate: calculateExpiryDate(e.target.value, form.validity || 30)
+                      expiryDate: calculateExpiryDate(e.target.value, form.validity || defaultValidity)
                     }));
                   }}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
@@ -2182,7 +2225,7 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
                 <select
                   value={form.validity}
                   onChange={(e) => {
-                    const validity = parseInt(e.target.value) || 30;
+                    const validity = parseInt(e.target.value) || defaultValidity;
                     setForm(prev => ({ 
                       ...prev, 
                       validity: validity,
@@ -2202,7 +2245,7 @@ const AddEditQuotationModal = ({ quotation, clients, products, onSave, onClose }
                   Status *
                 </label>
                 <select
-                  value={form.status}
+                  value={normalizeStatus(form.status, QUOTATION_STATUSES)}
                   onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value }))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                 >

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
+import api from "../services/http";
 import { 
   UserPlus, Trash2, ShieldCheck, Database, 
   Edit2, Save, X, Power, PowerOff, 
@@ -17,12 +17,16 @@ import {
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { formatDistanceToNow, format } from "date-fns";
+import { getInitials, resolveAvatarUrl } from "../utils/avatar";
 
-const BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
-const API_URL = `${BASE_URL}`;
-
-const api = axios.create({
-  baseURL: API_URL,
+const normalizeStats = (raw) => ({
+  total: Number(raw?.total) || 0,
+  online: Number(raw?.online) || 0,
+  active: Number(raw?.active) || 0,
+  departments: Array.isArray(raw?.departments) ? raw.departments : [],
+  roles: Array.isArray(raw?.roles) ? raw.roles : [],
+  productivity: Number(raw?.productivity) || 0,
+  engagement: Number(raw?.engagement) || 0,
 });
 
 const UserAdmin = () => {
@@ -43,6 +47,13 @@ const UserAdmin = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [activityLogs, setActivityLogs] = useState([]);
+  const [activityStats, setActivityStats] = useState({
+    totalSessions: 0,
+    totalTimeLabel: "0m",
+    averageSessionLabel: "0m",
+    currentSessionLabel: "-",
+    lastSignedInAt: null,
+  });
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   
@@ -61,15 +72,7 @@ const UserAdmin = () => {
     sortOrder: "asc"
   });
   
-  const [stats, setStats] = useState({
-    total: 0,
-    online: 0,
-    active: 0,
-    departments: [],
-    roles: [],
-    productivity: 0,
-    engagement: 0
-  });
+  const [stats, setStats] = useState(() => normalizeStats({}));
 
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -103,10 +106,25 @@ const UserAdmin = () => {
 
   const fetchUserActivity = async (userId) => {
     try {
-      const response = await api.get(`/activity/user/${userId}`);
-      setActivityLogs(response.data.logs || []);
+      const response = await api.get(`/admin/users/${userId}/activity`);
+      setActivityLogs(response?.data?.logs || response?.data?.activities || []);
+      setActivityStats(response?.data?.sessionStats || {
+        totalSessions: 0,
+        totalTimeLabel: "0m",
+        averageSessionLabel: "0m",
+        currentSessionLabel: "-",
+        lastSignedInAt: null,
+      });
     } catch (error) {
       console.error("Error fetching activity:", error);
+      setActivityLogs([]);
+      setActivityStats({
+        totalSessions: 0,
+        totalTimeLabel: "0m",
+        averageSessionLabel: "0m",
+        currentSessionLabel: "-",
+        lastSignedInAt: null,
+      });
       toast.error("Failed to load activity logs");
     }
   };
@@ -114,9 +132,10 @@ const UserAdmin = () => {
   const fetchStats = async () => {
     try {
       const response = await api.get('/dashboard/stats');
-      setStats(response.data.stats);
+      setStats(normalizeStats(response?.data?.stats || response?.data?.data?.stats || response?.data));
     } catch (error) {
       console.error("Error fetching stats:", error);
+      setStats(normalizeStats({}));
     }
   };
 
@@ -134,7 +153,7 @@ const UserAdmin = () => {
 
   useEffect(() => {
     if (usersData.stats) {
-      setStats(usersData.stats);
+      setStats(normalizeStats(usersData.stats));
     } else {
       fetchStats();
     }
@@ -159,22 +178,33 @@ const UserAdmin = () => {
       fetchStats();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || "Failed to create user");
+      const data = error.response?.data;
+      const msg =
+        data?.message ||
+        (Array.isArray(data?.errors) && data.errors[0]?.msg) ||
+        "Failed to create user";
+      toast.error(msg);
     }
   });
 
   const toggleStatusMutation = useMutation({
-    mutationFn: async (userId) => {
+    mutationFn: async ({ userId }) => {
       const response = await api.patch(`/users/${userId}/toggle-status`);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries(["users"]);
-      toast.success("User status updated");
+      const fallbackAction = variables?.nextAction === "activate" ? "activated" : "deactivated";
+      toast.success(data?.message || `User ${fallbackAction} successfully`);
       fetchStats();
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || "Failed to update status");
+      const statusCode = error?.response?.status;
+      if (statusCode === 403) {
+        toast.error("Action blocked: you do not have permission to change this user's status.");
+        return;
+      }
+      toast.error(error.response?.data?.message || "Failed to change user status");
     }
   });
 
@@ -211,7 +241,7 @@ const UserAdmin = () => {
 
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ userIds, updates }) => {
-      const response = await api.post('/users/bulk/update', { userIds, updates });
+      const response = await api.post('/users/bulk-update', { userIds, updates });
       return response.data;
     },
     onSuccess: () => {
@@ -231,8 +261,9 @@ const UserAdmin = () => {
     addUserMutation.mutate(newUser);
   };
 
-  const handleStatusToggle = (userId) => {
-    toggleStatusMutation.mutate(userId);
+  const handleStatusToggle = (targetUser) => {
+    const nextAction = targetUser?.isActive ? "deactivate" : "activate";
+    toggleStatusMutation.mutate({ userId: targetUser?._id, nextAction });
   };
 
   const handleUpdateUser = (id) => {
@@ -318,22 +349,33 @@ const UserAdmin = () => {
 
   const handleExportData = async () => {
     try {
-      const response = await api.get('/users/export/data', {
+      const params = new URLSearchParams();
+      params.set('format', 'csv');
+      if (selectedUsers.length > 0) {
+        params.set('ids', selectedUsers.join(','));
+      }
+
+      const response = await api.get(`/users/export?${params.toString()}`, {
         responseType: 'blob'
       });
       
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `users_export_${new Date().getTime()}.json`);
+      const disposition = response.headers?.['content-disposition'] || '';
+      const fileNameMatch = disposition.match(/filename="?([^"]+)"?/i);
+      const fallbackName = `users_export_${new Date().getTime()}.csv`;
+      link.setAttribute('download', fileNameMatch?.[1] || fallbackName);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
       
-      toast.success(`Exported ${users.length} users`);
+      const count = selectedUsers.length > 0 ? selectedUsers.length : users.length;
+      toast.success(`Exported ${count} user(s)`);
     } catch (error) {
       console.error("Export error:", error);
-      toast.error("Failed to export users");
+      toast.error(error.response?.data?.message || "Failed to export users");
     }
   };
 
@@ -390,15 +432,11 @@ const UserAdmin = () => {
     return 'text-red-600 bg-red-50';
   };
 
-  const generateAvatar = (name) => {
-    if (!name) return '?';
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans antialiased">
       <Toaster 
         position="top-right"
+        containerStyle={{ top: 76, zIndex: 1200 }}
         toastOptions={{
           className: 'border border-gray-200 shadow-lg p-4 text-sm font-medium rounded-lg',
           duration: 4000,
@@ -407,7 +445,7 @@ const UserAdmin = () => {
 
       {/* Activity Modal */}
       {showActivityModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
               <div>
@@ -425,19 +463,42 @@ const UserAdmin = () => {
               </button>
             </div>
             <div className="flex-1 overflow-auto p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
+                  <p className="text-xl font-semibold text-gray-900">{activityStats.totalSessions || 0}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Total Time Online</p>
+                  <p className="text-xl font-semibold text-gray-900">{activityStats.totalTimeLabel || "0m"}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Avg Session</p>
+                  <p className="text-xl font-semibold text-gray-900">{activityStats.averageSessionLabel || "0m"}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Current Session</p>
+                  <p className="text-xl font-semibold text-gray-900">{activityStats.currentSessionLabel || "-"}</p>
+                </div>
+              </div>
               {activityLogs.length > 0 ? (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-gray-500 pb-2 border-b">
+                  <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-gray-500 pb-2 border-b">
                     <div>Action</div>
                     <div>Module</div>
                     <div>Time</div>
+                    <div>Online Time</div>
                     <div>Status</div>
                   </div>
                   {activityLogs.map((log) => (
-                    <div key={log._id} className="grid grid-cols-4 gap-4 p-3 hover:bg-gray-50 rounded-lg border border-gray-100">
-                      <div className="font-medium text-sm">{log.action}</div>
+                    <div key={log._id} className="grid grid-cols-5 gap-4 p-3 hover:bg-gray-50 rounded-lg border border-gray-100">
+                      <div>
+                        <p className="font-medium text-sm text-gray-900">{log.displayAction || log.action}</p>
+                        {log.target && <p className="text-xs text-gray-500 mt-1">{log.target}</p>}
+                      </div>
                       <div><span className="px-2 py-1 rounded bg-gray-100 text-xs text-gray-700">{log.module}</span></div>
-                      <div className="text-sm text-gray-600">{format(new Date(log.timestamp), 'PPp')}</div>
+                      <div className="text-sm text-gray-600">{format(new Date(log.timestamp || log.createdAt), 'MMM d, yyyy h:mm a')}</div>
+                      <div className="text-sm text-gray-700">{log.onlineDurationLabel || '-'}</div>
                       <div>
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${
                           log.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -461,13 +522,21 @@ const UserAdmin = () => {
 
       {/* Profile Modal */}
       {showProfileModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-2xl">
-                  {generateAvatar(selectedUser.name)}
-                </div>
+                {resolveAvatarUrl(selectedUser.avatar) ? (
+                  <img
+                    src={resolveAvatarUrl(selectedUser.avatar)}
+                    alt={selectedUser.name || "User"}
+                    className="h-16 w-16 rounded-full border border-gray-200 object-cover"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-2xl">
+                    {getInitials(selectedUser.name)}
+                  </div>
+                )}
                 <div>
                   <h3 className="font-semibold text-xl text-gray-900">{selectedUser.name}</h3>
                   <p className="text-sm text-gray-600">{selectedUser.position} • {selectedUser.department}</p>
@@ -583,7 +652,7 @@ const UserAdmin = () => {
 
       {/* Import Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
               <h3 className="font-semibold text-lg text-gray-900">Import Users</h3>
@@ -603,7 +672,7 @@ const UserAdmin = () => {
                   type="file" 
                   className="hidden" 
                   id="file-upload" 
-                  accept=".csv,.xlsx,.xls"
+                  accept=".csv,.json"
                   onChange={(e) => {
                     if (e.target.files[0]) {
                       handleImportUsers(e.target.files[0]);
@@ -615,7 +684,7 @@ const UserAdmin = () => {
                 </label>
               </div>
               <div className="mt-4 text-xs text-gray-500">
-                <p>Supported formats: CSV, Excel (.xlsx, .xls)</p>
+                <p>Supported formats: CSV or JSON</p>
                 <p>Maximum file size: 10MB</p>
               </div>
             </div>
@@ -1041,9 +1110,17 @@ const UserAdmin = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="relative">
-                          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm uppercase">
-                            {generateAvatar(u.name)}
-                          </div>
+                          {resolveAvatarUrl(u.avatar) ? (
+                            <img
+                              src={resolveAvatarUrl(u.avatar)}
+                              alt={u.name || "User"}
+                              className="h-10 w-10 rounded-full border border-gray-200 object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm uppercase">
+                              {getInitials(u.name)}
+                            </div>
+                          )}
                           <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(u.onlineStatus)}`}></div>
                         </div>
                         <div>
@@ -1187,13 +1264,13 @@ const UserAdmin = () => {
                         </button>
                         
                         <button 
-                          onClick={() => handleStatusToggle(u._id)} 
+                          onClick={() => handleStatusToggle(u)} 
                           className={`p-1.5 rounded transition-colors ${
                             u.isActive 
                               ? 'text-green-600 hover:bg-green-50 hover:text-green-700' 
                               : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
                           }`}
-                          title={u.isActive ? "Deactivate" : "Activate"}
+                          title={u.isActive ? "Deactivate User" : "Activate User"}
                         >
                           {u.isActive ? <Power size={14} /> : <PowerOff size={14} />}
                         </button>
