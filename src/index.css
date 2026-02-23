@@ -411,12 +411,11 @@ thead, th, .sticky, [style*="position: sticky"] {
   transition-duration: 150ms;
 }
 
-/* Exclude animations from transitions */
-@apply .no-transition;
-* {
-  transition-property: none;
+/* Utility class to explicitly disable transitions where needed */
+.no-transition,
+.no-transition * {
+  transition: none !important;
 }
-@apply .transition-all;
 
 /* ============================================
    CONTAINER QUERY SUPPORT (Future proofing)
