@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/http";
-import { defaultAppSettings, mergeAppSettings } from "../utils/documentSettings";
+import { defaultAppSettings, getDocumentSettings, mergeAppSettings } from "../utils/documentSettings";
 import { useAuth } from "../context/AuthContext";
 
 const tabs = [
@@ -48,7 +48,7 @@ const Settings = () => {
     [isAdmin]
   );
 
-  const currentDoc = useMemo(() => settings.documents?.[docType] || defaultAppSettings.documents.invoice, [settings, docType]);
+  const currentDoc = useMemo(() => getDocumentSettings(settings, docType), [settings, docType]);
 
   const applyTheme = (theme) => {
     const root = window.document.documentElement;
@@ -141,16 +141,16 @@ const Settings = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 dark:bg-[#020617] dark:text-slate-100">
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
-        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+    <div className="min-h-screen bg-[#F8FAFC] px-3 py-4 text-slate-900 sm:px-4 sm:py-5 lg:px-6 lg:py-6 dark:bg-[#020617] dark:text-slate-100">
+      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 md:gap-6 lg:grid-cols-[260px_1fr]">
+        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 dark:border-slate-800 dark:bg-slate-900">
           <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-400">Settings Hub</p>
-          <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                className={`flex w-full items-center justify-center gap-2 rounded-lg px-2.5 py-2.5 text-xs font-semibold transition-colors sm:text-sm lg:justify-start lg:px-3 lg:py-2 ${
                   activeTab === tab.id
                     ? "bg-slate-900 text-white dark:bg-slate-700"
                     : "text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -173,7 +173,7 @@ const Settings = () => {
           )}
         </aside>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6 dark:border-slate-800 dark:bg-slate-900">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 md:p-6 dark:border-slate-800 dark:bg-slate-900">
           {loading ? (
             <p className="text-sm text-slate-500">Loading settings...</p>
           ) : (
@@ -312,12 +312,12 @@ const Settings = () => {
 
               {isAdmin && activeTab === "documents" && (
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h2 className="text-lg font-black text-slate-900">Document Engine</h2>
                     <select
                       value={docType}
                       onChange={(e) => setDocType(e.target.value)}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold uppercase"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold uppercase sm:w-auto"
                     >
                       {docTypes.map((type) => (
                         <option key={type} value={type}>
@@ -491,11 +491,11 @@ const Settings = () => {
             </>
           )}
 
-          <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
+          <div className="mt-6 flex justify-stretch border-t border-slate-200 pt-4 sm:justify-end">
             <button
               onClick={saveSettings}
               disabled={saving || loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60 sm:w-auto"
             >
               <Save size={15} />
               {saving ? "Saving..." : "Save Settings"}

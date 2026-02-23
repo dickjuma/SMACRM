@@ -26,3 +26,19 @@ thead, th, .sticky, [style*="position: sticky"] {
 /* Custom scrollbar for that clean Enterprise look */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Mobile-first guardrails for dense enterprise tables and dialogs */
+@media (max-width: 767px) {
+  .overflow-x-auto > table th,
+  .overflow-x-auto > table td {
+    white-space: nowrap;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .mobile-dialog {
+    width: calc(100vw - 1rem) !important;
+    max-width: calc(100vw - 1rem) !important;
+    max-height: calc(100dvh - 1rem) !important;
+  }
+}

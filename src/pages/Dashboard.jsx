@@ -184,44 +184,52 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-10">
-      <header className="sticky top-0 z-20 h-20 border-b border-slate-200 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 md:px-8">
+      <header className="sticky top-0 z-20 h-16 border-b border-slate-200 bg-white/90 backdrop-blur-xl md:h-20">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-3 sm:px-4 md:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 md:h-10 md:w-10">
               <ShieldCheck className="h-5 w-5 text-indigo-300" />
             </div>
             <div>
-              <h1 className="text-sm font-black uppercase tracking-tight text-slate-900 md:text-lg">Executive Finance Dashboard</h1>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">SMA Performance Office</p>
+              <h1 className="text-xs font-black uppercase tracking-tight text-slate-900 sm:text-sm md:text-lg">Executive Finance Dashboard</h1>
+              <p className="hidden text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 sm:block">SMA Performance Office</p>
             </div>
           </div>
           <button
             onClick={() => refetch()}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-white"
+            className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 transition-colors hover:bg-white md:p-3"
           >
             <RefreshCcw className={`h-4 w-4 text-slate-500 ${isFetching ? "animate-spin" : ""}`} />
           </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-4 pt-6 md:px-8">
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <main className="mx-auto max-w-7xl space-y-4 px-3 pt-4 sm:space-y-6 sm:px-4 sm:pt-6 md:px-8">
+        <section className="rounded-2xl border border-slate-200 bg-white p-2.5 sm:border-0 sm:bg-transparent sm:p-0">
+          <div className="mb-2 flex items-center justify-between px-1 sm:mb-3 sm:px-0">
+            <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 sm:text-sm">Executive Snapshot</h2>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Live</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 md:grid-cols-3">
           {kpiCards.map((card) => (
             <Link
               key={card.id}
               to={card.link}
-              className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:rounded-2xl sm:p-5 sm:hover:shadow-xl"
             >
-              <div className={`absolute left-0 top-0 h-full w-1 ${card.accent}`} />
-              <div className="flex items-start justify-between pl-2">
-                <div className={`rounded-xl border px-3 py-2 ${card.tone}`}>{React.cloneElement(card.icon, { className: "h-5 w-5" })}</div>
-                <ArrowUpRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-700" />
+              <div className={`absolute left-0 top-0 h-full w-0.5 sm:w-1 ${card.accent}`} />
+              <div className="flex items-start justify-between pl-1 sm:pl-2">
+                <div className={`rounded-lg border p-1.5 ${card.tone} sm:rounded-xl sm:px-3 sm:py-2`}>
+                  {React.cloneElement(card.icon, { className: "h-3.5 w-3.5 sm:h-5 sm:w-5" })}
+                </div>
+                <ArrowUpRight className="hidden h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-700 sm:block" />
               </div>
-              <p className="mt-4 pl-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{card.label}</p>
-              <p className="mt-1 pl-2 text-3xl font-black tracking-tight text-slate-900">{isLoading ? "..." : card.value}</p>
-              <p className="mt-1 pl-2 text-xs font-medium text-slate-500">{isLoading ? "Loading insights..." : card.meta}</p>
+              <p className="mt-2 pl-1 text-[9px] font-black uppercase tracking-[0.08em] text-slate-500 sm:mt-4 sm:pl-2 sm:text-[10px] sm:tracking-[0.16em] sm:text-slate-400">{card.label}</p>
+              <p className="mt-0.5 pl-1 text-sm font-black tracking-tight text-slate-900 sm:mt-1 sm:pl-2 sm:text-3xl">{isLoading ? "..." : card.value}</p>
+              <p className="mt-1 hidden pl-2 text-xs font-medium text-slate-500 sm:block">{isLoading ? "Loading insights..." : card.meta}</p>
             </Link>
           ))}
+          </div>
         </section>
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">

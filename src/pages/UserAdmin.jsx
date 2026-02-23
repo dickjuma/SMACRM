@@ -559,7 +559,7 @@ const UserAdmin = () => {
   const activityTypes = [...new Set(globalActivity.map((item) => item.actionType).filter(Boolean))];
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans antialiased">
+    <div className="min-h-screen bg-gray-50 px-3 py-4 text-gray-900 font-sans antialiased sm:px-4 md:px-6">
       <Toaster 
         position="top-right"
         containerStyle={{ top: 76, zIndex: 1200 }}
@@ -859,7 +859,7 @@ const UserAdmin = () => {
             <p className="text-gray-600 text-sm">Manage employees, track activity, and monitor performance</p>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-3">
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-sm text-sm font-medium"
@@ -895,59 +895,59 @@ const UserAdmin = () => {
         </header>
 
         {/* Stats Dashboard */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-4 gap-2 md:gap-4">
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Total Employees</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total || 0}</p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="mb-1 text-[10px] font-medium leading-tight text-gray-500 sm:text-sm">Total Employees</p>
+                <p className="text-lg font-bold text-gray-900 sm:text-2xl">{stats.total || 0}</p>
               </div>
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <Users className="text-blue-600" size={20} />
+              <div className="rounded-lg bg-blue-50 p-1.5 sm:p-2">
+                <Users className="text-blue-600" size={18} />
               </div>
             </div>
           </div>
 
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Active Now</p>
-                <p className="text-2xl font-bold text-green-600">{liveOnlineUsersCount}</p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="mb-1 text-[10px] font-medium leading-tight text-gray-500 sm:text-sm">Active Now</p>
+                <p className="text-lg font-bold text-green-600 sm:text-2xl">{liveOnlineUsersCount}</p>
               </div>
-              <div className="p-2 bg-green-50 rounded-lg">
-                <Globe className="text-green-600" size={20} />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Productivity</p>
-                <p className="text-2xl font-bold text-blue-600">{stats.productivity || 0}%</p>
-              </div>
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <BarChart3 className="text-blue-600" size={20} />
+              <div className="rounded-lg bg-green-50 p-1.5 sm:p-2">
+                <Globe className="text-green-600" size={18} />
               </div>
             </div>
           </div>
 
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Engagement</p>
-                <p className="text-2xl font-bold text-yellow-600">{stats.engagement || 0}%</p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="mb-1 text-[10px] font-medium leading-tight text-gray-500 sm:text-sm">Productivity</p>
+                <p className="text-lg font-bold text-blue-600 sm:text-2xl">{stats.productivity || 0}%</p>
               </div>
-              <div className="p-2 bg-yellow-50 rounded-lg">
-                <Target className="text-yellow-600" size={20} />
+              <div className="rounded-lg bg-blue-50 p-1.5 sm:p-2">
+                <BarChart3 className="text-blue-600" size={18} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="mb-1 text-[10px] font-medium leading-tight text-gray-500 sm:text-sm">Engagement</p>
+                <p className="text-lg font-bold text-yellow-600 sm:text-2xl">{stats.engagement || 0}%</p>
+              </div>
+              <div className="rounded-lg bg-yellow-50 p-1.5 sm:p-2">
+                <Target className="text-yellow-600" size={18} />
               </div>
             </div>
           </div>
         </div>
 {/* Quick Stats and Filters */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:items-center lg:gap-6">
               <div className="text-center">
                 <div className="text-xs text-gray-500">Departments</div>
                 <div className="text-base font-semibold text-gray-900">{stats.departments?.length || 0}</div>
@@ -956,22 +956,22 @@ const UserAdmin = () => {
                 <div className="text-xs text-gray-500">Active Today</div>
                 <div className="text-base font-semibold text-gray-900">{stats.active || 0}</div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1">
                 <Search size={16} className="text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search users..."
                   value={filters.search}
                   onChange={(e) => handleFilterChange('search', e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent lg:min-w-[260px]"
                 />
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:items-center lg:gap-3">
               <select
                 value={filters.role}
                 onChange={(e) => handleFilterChange('role', e.target.value)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
               >
                 <option value="">All Roles</option>
                 <option value="user">User</option>
@@ -983,7 +983,7 @@ const UserAdmin = () => {
               <select
                 value={filters.department}
                 onChange={(e) => handleFilterChange('department', e.target.value)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
               >
                 <option value="">All Departments</option>
                 {stats.departments?.map(dept => (
@@ -994,7 +994,7 @@ const UserAdmin = () => {
               </select>
               <button
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                className="flex w-full items-center justify-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors lg:w-auto"
                 title={showAdvancedFilters ? "Hide advanced filters" : "Show advanced filters"}
               >
                 <Filter size={14} />
@@ -1165,11 +1165,101 @@ const UserAdmin = () => {
 
         {/* DATA TABLE */}
         <section className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div className="grid gap-3 p-3 md:hidden">
+            {users.map((u) => {
+              const liveStatus = deriveOnlineStatus(u);
+              return (
+                <article key={u._id} className={`rounded-lg border p-3 shadow-sm ${!u.isActive ? "opacity-70" : ""}`}>
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.includes(u._id)}
+                        onChange={() => handleSelectUser(u._id)}
+                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="relative">
+                        {resolveAvatarUrl(u.avatar) ? (
+                          <img
+                            src={resolveAvatarUrl(u.avatar)}
+                            alt={u.name || "User"}
+                            className="h-9 w-9 rounded-full border border-gray-200 object-cover"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase">
+                            {getInitials(u.name)}
+                          </div>
+                        )}
+                        <div className={`absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${getStatusColor(liveStatus)}`}></div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-900">{u.name}</p>
+                        <p className="truncate text-xs text-gray-500">{u.email}</p>
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium ${getRoleColor(u.role)}`}>
+                      {u.role?.replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                    <div className="rounded bg-gray-50 p-2">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Department</p>
+                      <p className="truncate font-medium text-gray-800">{u.department || "Unassigned"}</p>
+                    </div>
+                    <div className="rounded bg-gray-50 p-2">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Status</p>
+                      <p className="font-medium capitalize text-gray-800">{liveStatus || "offline"}</p>
+                    </div>
+                    <div className="rounded bg-gray-50 p-2">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Performance</p>
+                      <p className={`font-semibold ${getPerformanceColor(u.performance)}`}>{u.performance || 0}%</p>
+                    </div>
+                    <div className="rounded bg-gray-50 p-2">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Last Seen</p>
+                      <p className="truncate font-medium text-gray-800">{formatLastSeen(u)}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-5 gap-1.5">
+                    <button onClick={() => handleViewProfile(u)} className="rounded bg-slate-100 p-2 text-slate-600" title="View Profile">
+                      <Eye size={14} className="mx-auto" />
+                    </button>
+                    <button onClick={() => handleViewActivity(u)} className="rounded bg-slate-100 p-2 text-slate-600" title="View Activity">
+                      <Activity size={14} className="mx-auto" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingId(u._id);
+                        setEditRole(u.role);
+                        setEditDepartment(u.department);
+                      }}
+                      className="rounded bg-emerald-50 p-2 text-emerald-700"
+                      title="Edit User"
+                    >
+                      <Edit2 size={14} className="mx-auto" />
+                    </button>
+                    <button
+                      onClick={() => handleStatusToggle(u)}
+                      className={`rounded p-2 ${u.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                      title={u.isActive ? "Deactivate User" : "Activate User"}
+                    >
+                      {u.isActive ? <Power size={14} className="mx-auto" /> : <PowerOff size={14} className="mx-auto" />}
+                    </button>
+                    <button onClick={() => handleResetPassword(u)} className="rounded bg-amber-50 p-2 text-amber-700" title="Reset Password">
+                      <Key size={14} className="mx-auto" />
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[960px] text-left">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
-                  <th className="px-6 py-3 w-10">
+                  <th className="w-10 px-3 py-3 sm:px-6">
                     <input
                       type="checkbox"
                       checked={selectedUsers.length === users.length && users.length > 0}
@@ -1177,7 +1267,7 @@ const UserAdmin = () => {
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                   </th>
-                  <th className="px-6 py-3 cursor-pointer hover:bg-gray-100" onClick={() => handleSort("name")}>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-gray-100 sm:px-6" onClick={() => handleSort("name")}>
                     <div className="flex items-center gap-1">
                       Employee
                       {advancedFilters.sortBy === "name" && (
@@ -1185,7 +1275,7 @@ const UserAdmin = () => {
                       )}
                     </div>
                   </th>
-                  <th className="px-6 py-3 cursor-pointer hover:bg-gray-100" onClick={() => handleSort("role")}>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-gray-100 sm:px-6" onClick={() => handleSort("role")}>
                     <div className="flex items-center gap-1">
                       Role & Department
                       {advancedFilters.sortBy === "role" && (
@@ -1193,7 +1283,7 @@ const UserAdmin = () => {
                       )}
                     </div>
                   </th>
-                  <th className="px-6 py-3 cursor-pointer hover:bg-gray-100" onClick={() => handleSort("lastSeen")}>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-gray-100 sm:px-6" onClick={() => handleSort("lastSeen")}>
                     <div className="flex items-center gap-1">
                       Status
                       {advancedFilters.sortBy === "lastSeen" && (
@@ -1201,8 +1291,8 @@ const UserAdmin = () => {
                       )}
                     </div>
                   </th>
-                  <th className="px-6 py-3">Performance</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
+                  <th className="px-3 py-3 sm:px-6">Performance</th>
+                  <th className="px-3 py-3 text-right sm:px-6">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

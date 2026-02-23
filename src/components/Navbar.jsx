@@ -15,7 +15,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import api from "../services/http";
 import socketService from "../services/socket";
-import { getRouteSearchIndexForRole } from "./navigationConfig";
+import { getRouteSearchIndexForRole, getSidebarNavigationForRole } from "./navigationConfig";
 import { getInitials, resolveAvatarUrl } from "../utils/avatar";
 
 const toEpoch = (value) => {
@@ -92,6 +92,33 @@ const Navbar = () => {
     return items;
   }, [isAdmin]);
 
+  const mobileNavItems = useMemo(() => {
+    const roleNavItems = getSidebarNavigationForRole(role).flatMap((group) => group.items);
+    const seen = new Set();
+    const merged = [];
+
+    [...profileItems, ...roleNavItems].forEach((item) => {
+      const target = item.to || item.link;
+      if (!target || seen.has(target)) return;
+      seen.add(target);
+
+      const iconNode = (() => {
+        if (!item.icon) return <User size={15} />;
+        if (typeof item.icon === "object" && item.icon.$$typeof && "props" in item.icon) return item.icon;
+        const Icon = item.icon;
+        return <Icon size={15} />;
+      })();
+
+      merged.push({
+        label: item.label,
+        to: target,
+        icon: iconNode
+      });
+    });
+
+    return merged;
+  }, [profileItems, role]);
+
   useEffect(() => {
     const root = window.document.documentElement;
     isDarkMode ? root.classList.add("dark") : root.classList.remove("dark");
@@ -106,6 +133,15 @@ const Navbar = () => {
 
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    const onMobileMenuOpen = () => {
+      setProfileOpen(false);
+      setNotificationOpen(false);
+    };
+    window.addEventListener("sma:mobile-menu-open", onMobileMenuOpen);
+    return () => window.removeEventListener("sma:mobile-menu-open", onMobileMenuOpen);
   }, []);
 
   useEffect(() => {
@@ -192,17 +228,17 @@ const Navbar = () => {
 
   return (
     <header className="sticky top-0 z-[90] border-b border-slate-200 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-[#0F172A]/95">
-      <div className="mx-auto flex h-16 w-full max-w-[1800px] items-center gap-3 px-4 md:px-6">
+      <div className="mx-auto flex w-full max-w-[1800px] flex-wrap items-center gap-2 py-2 pl-14 pr-3 sm:gap-3 sm:px-4 md:h-16 md:flex-nowrap md:py-0 md:px-6">
         <button
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+          className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 sm:px-2"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
             <Shield size={16} />
           </div>
           <div className="text-left">
-            <p className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">SMA Core</p>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Enterprise Console</p>
+            <p className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white sm:text-sm">SMA Core</p>
+            <p className="hidden text-[10px] uppercase tracking-[0.14em] text-slate-500 sm:block">Enterprise Console</p>
           </div>
         </button>
 
@@ -218,6 +254,7 @@ const Navbar = () => {
           </div>
         </form>
 
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
         <button
           onClick={() => setIsDarkMode((prev) => !prev)}
           className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -231,7 +268,11 @@ const Navbar = () => {
             <button
               onClick={() => {
                 const next = !notificationOpen;
+                if (next) {
+                  window.dispatchEvent(new CustomEvent("sma:navbar-menu-open"));
+                }
                 setNotificationOpen(next);
+                if (next) setProfileOpen(false);
                 if (next) markAllRead();
               }}
               className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -246,7 +287,7 @@ const Navbar = () => {
             </button>
 
             {notificationOpen && (
-              <div className="absolute right-0 mt-2 max-h-[520px] w-[400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="absolute right-0 mt-2 max-h-[70dvh] w-[min(92vw,400px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">Admin Notifications</p>
                   <div className="flex items-center gap-3">
@@ -264,7 +305,7 @@ const Navbar = () => {
                     </button>
                   </div>
                 </div>
-                <div className="max-h-[460px] overflow-y-auto">
+                <div className="max-h-[58dvh] overflow-y-auto">
                   {notificationsLoading && (
                     <p className="px-4 py-3 text-sm text-slate-500">Loading notifications...</p>
                   )}
@@ -307,7 +348,16 @@ const Navbar = () => {
 
         <div className="relative" ref={profileRef}>
           <button
-            onClick={() => setProfileOpen((prev) => !prev)}
+            onClick={() => {
+              setProfileOpen((prev) => {
+                const next = !prev;
+                if (next) {
+                  window.dispatchEvent(new CustomEvent("sma:navbar-menu-open"));
+                  setNotificationOpen(false);
+                }
+                return next;
+              });
+            }}
             className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
           >
             {resolveAvatarUrl(user?.avatar) ? (
@@ -325,21 +375,45 @@ const Navbar = () => {
               <p className="text-xs font-semibold text-slate-900 dark:text-white">{user?.name || "User"}</p>
               <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{user?.role || "Account"}</p>
             </div>
-            <ChevronDown size={14} className="text-slate-500" />
+            <ChevronDown size={14} className="hidden text-slate-500 sm:block" />
           </button>
 
           {profileOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-              {profileItems.map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => navigate(item.to)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              ))}
+            <div className="absolute right-0 mt-2 max-h-[75dvh] w-[min(94vw,360px)] overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">{user?.name || "User"}</p>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{user?.role || "Account"}</p>
+              </div>
+
+              <div className="hidden md:block">
+                {profileItems.map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => navigate(item.to)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="md:hidden">
+                <p className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">All Menu</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {mobileNavItems.map((item) => (
+                    <button
+                      key={item.to}
+                      onClick={() => navigate(item.to)}
+                      className="flex w-full items-center gap-2 rounded-md border border-slate-200 px-2 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      {item.icon}
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 onClick={() => {
                   logout();
@@ -353,6 +427,19 @@ const Navbar = () => {
             </div>
           )}
         </div>
+        </div>
+
+        <form onSubmit={handleSearchSubmit} className="w-full md:hidden">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search module..."
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
+        </form>
       </div>
     </header>
   );

@@ -52,15 +52,15 @@ function AppContent() {
           ${isLoginPage ? "w-full" : "transition-all duration-300 ease-in-out"}
         `}>
           
-          <div className={`${isLoginPage ? "" : "p-4 md:p-8 lg:p-10"}`}>
+          <div className={`${isLoginPage ? "" : "px-3 py-4 sm:px-4 md:p-8 lg:p-10"}`}>
             <div className={isLoginPage ? "" : "max-w-[1600px] mx-auto w-full"}>
               
               {!isLoginPage && (
-                <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
-                  <h1 className="text-xl font-bold tracking-tight capitalize">
+                <div className="mb-5 animate-in fade-in slide-in-from-top-4 duration-500 md:mb-6">
+                  <h1 className="text-lg font-bold tracking-tight capitalize sm:text-xl">
                     {location.pathname.split('/')[1] || 'Overview'}
                   </h1>
-                  <p className="text-xs text-slate-500 font-medium">
+                  <p className="hidden text-xs font-medium text-slate-500 sm:block">
                     Enterprise Resource Management / {location.pathname === "/" ? "Dashboard" : location.pathname.substring(1)}
                   </p>
                 </div>

@@ -243,16 +243,7 @@ const DOCUMENT_ICONS = {
 
 // Statistics Panel (kept)
 const StatisticsPanel = ({ data }) => {
-  const [stats, setStats] = useState({
-    totalSent: 0,
-    openRate: 0,
-    delivered: 0,
-    bounceRate: 0,
-    clickRate: 0,
-    unsubscribes: 0
-  });
-
-  const { data: emailStats, isLoading, error } = useQuery({
+  const { data: emailStats, isLoading } = useQuery({
     queryKey: ['emailStats'],
     queryFn: async () => {
       try {
@@ -271,11 +262,17 @@ const StatisticsPanel = ({ data }) => {
       }
     },
     refetchInterval: 30000,
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
   });
-
-  useEffect(() => {
-    if (emailStats) setStats(emailStats);
-  }, [emailStats]);
+  const stats = emailStats || {
+    totalSent: 0,
+    openRate: 0,
+    delivered: 0,
+    bounceRate: 0,
+    clickRate: 0,
+    unsubscribes: 0
+  };
 
   if (isLoading) {
     return (
@@ -495,7 +492,16 @@ const EmailHistory = () => {
       }
     },
     refetchInterval: 30000,
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
   });
+
+  const filteredHistory = useMemo(() => (
+    emailHistory.filter((email) => {
+      if (filter === 'all') return true;
+      return email.status === filter;
+    })
+  ), [emailHistory, filter]);
 
   if (isLoading) {
     return (
@@ -518,11 +524,6 @@ const EmailHistory = () => {
       </div>
     );
   }
-
-  const filteredHistory = emailHistory.filter(email => {
-    if (filter === 'all') return true;
-    return email.status === filter;
-  });
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -698,6 +699,7 @@ const EmailComposerContent = () => {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [selectedClients, setSelectedClients] = useState([]);
   const [clientSearch, setClientSearch] = useState("");
+  const [debouncedClientSearch, setDebouncedClientSearch] = useState("");
   const [subject, setSubject] = useState(localStorage.getItem('draft_subject') || "");
   const [message, setMessage] = useState(localStorage.getItem('draft_message') || "");
   const [progress, setProgress] = useState(0);
@@ -714,6 +716,7 @@ const EmailComposerContent = () => {
   const [showVariables, setShowVariables] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [lastSendSummary, setLastSendSummary] = useState(null);
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const [tracking, setTracking] = useState({
     enabled: true,
     openTracking: true,
@@ -724,6 +727,7 @@ const EmailComposerContent = () => {
   const fileInputRef = useRef(null);
   const editorRef = useRef(null);
   const queryClient = useQueryClient();
+  const isMobileViewport = viewportWidth < 640;
 
   // Email variables for template insertion
   const emailVariables = [
@@ -737,9 +741,19 @@ const EmailComposerContent = () => {
 
   // Persistence
   useEffect(() => {
-    localStorage.setItem('draft_subject', subject);
-    localStorage.setItem('draft_message', message);
+    const timer = setTimeout(() => {
+      localStorage.setItem('draft_subject', subject);
+      localStorage.setItem('draft_message', message);
+    }, 250);
+    return () => clearTimeout(timer);
   }, [subject, message]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedClientSearch(clientSearch.trim().toLowerCase());
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [clientSearch]);
 
   // Query for finance registry
   const { data: registry = { Invoices: [], Quotations: [], Receipts: [], Services: [], Clients: [] }, isLoading, refetch } = useQuery({
@@ -815,6 +829,8 @@ const EmailComposerContent = () => {
       }
     },
     refetchInterval: 60000,
+    refetchOnWindowFocus: false,
+    staleTime: 45000,
     retry: 2,
     retryDelay: 1000
   });
@@ -959,7 +975,7 @@ const EmailComposerContent = () => {
 
   const handleAttachDocument = (doc) => {
     if (!attachedDocuments.some(d => d._id === doc._id)) {
-      setAttachedDocuments([...attachedDocuments, doc]);
+      setAttachedDocuments((prev) => [...prev, doc]);
       toast.success("Document attached", { icon: '📎', duration: 2000 });
     } else {
       toast.error("Document already attached");
@@ -971,17 +987,17 @@ const EmailComposerContent = () => {
       setAttachedFile(null);
       toast.success("File removed");
     } else {
-      setAttachedDocuments(attachedDocuments.filter((_, i) => i !== index));
+      setAttachedDocuments((prev) => prev.filter((_, i) => i !== index));
       toast.success("Document removed");
     }
   };
 
   const filteredClients = useMemo(() => 
     (registry.Clients || []).filter(c => 
-      c.name?.toLowerCase().includes(clientSearch.toLowerCase()) ||
-      c.email?.toLowerCase().includes(clientSearch.toLowerCase()) ||
-      c.company?.toLowerCase().includes(clientSearch.toLowerCase())
-    ), [registry.Clients, clientSearch]
+      c.name?.toLowerCase().includes(debouncedClientSearch) ||
+      c.email?.toLowerCase().includes(debouncedClientSearch) ||
+      c.company?.toLowerCase().includes(debouncedClientSearch)
+    ), [registry.Clients, debouncedClientSearch]
   );
 
   const filteredDocuments = useMemo(() => 
@@ -989,11 +1005,11 @@ const EmailComposerContent = () => {
       const clientName = doc.client?.name || doc.clientDetails?.name || "";
       const docNumber = doc.invoiceNumber || doc.quotationNumber || doc.receiptNumber || doc.serviceNumber || "";
       return (
-        clientName.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        docNumber.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        (doc._id && doc._id.toLowerCase().includes(clientSearch.toLowerCase()))
+        clientName.toLowerCase().includes(debouncedClientSearch) ||
+        docNumber.toLowerCase().includes(debouncedClientSearch) ||
+        (doc._id && doc._id.toLowerCase().includes(debouncedClientSearch))
       );
-    }), [registry, activeTab, clientSearch]
+    }), [registry, activeTab, debouncedClientSearch]
   );
 
   const handleSelectAll = () => {
@@ -1020,7 +1036,7 @@ const EmailComposerContent = () => {
   const addCcRecipient = () => {
     const newEmail = prompt("Enter CC email:");
     if (newEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
-      setCcRecipients([...ccRecipients, newEmail]);
+      setCcRecipients((prev) => [...prev, newEmail]);
       toast.success("CC added");
     } else if (newEmail) {
       toast.error("Invalid email address");
@@ -1030,7 +1046,7 @@ const EmailComposerContent = () => {
   const addBccRecipient = () => {
     const newEmail = prompt("Enter BCC email:");
     if (newEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
-      setBccRecipients([...bccRecipients, newEmail]);
+      setBccRecipients((prev) => [...prev, newEmail]);
       toast.success("BCC added");
     } else if (newEmail) {
       toast.error("Invalid email address");
@@ -1038,12 +1054,12 @@ const EmailComposerContent = () => {
   };
 
   const removeCcRecipient = (index) => {
-    setCcRecipients(ccRecipients.filter((_, i) => i !== index));
+    setCcRecipients((prev) => prev.filter((_, i) => i !== index));
     toast.success("CC removed");
   };
 
   const removeBccRecipient = (index) => {
-    setBccRecipients(bccRecipients.filter((_, i) => i !== index));
+    setBccRecipients((prev) => prev.filter((_, i) => i !== index));
     toast.success("BCC removed");
   };
 
@@ -1215,10 +1231,17 @@ const EmailComposerContent = () => {
       setAttachedFile(file);
       toast.success(`File "${file.name}" attached`, { icon: '📎', duration: 2000 });
     }
+    e.target.value = "";
   };
 
+  const wordCount = useMemo(() => message.split(/\s+/).filter(Boolean).length, [message]);
+
   useEffect(() => {
-    const handleResize = () => setIsSidebarOpen(window.innerWidth > 1024);
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setViewportWidth(width);
+      setIsSidebarOpen(width > 1024);
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -1241,8 +1264,14 @@ const EmailComposerContent = () => {
   return (
     <div className={`h-screen w-full bg-white flex flex-col overflow-hidden text-gray-800 font-sans antialiased transition-all duration-300 ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
       <Toaster 
-        position="top-right"
-        containerStyle={{ top: 76, zIndex: 1200 }}
+        position={isMobileViewport ? "top-center" : "top-right"}
+        gutter={8}
+        containerStyle={{
+          top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+          right: isMobileViewport ? 8 : 16,
+          left: isMobileViewport ? 8 : undefined,
+          zIndex: 1400
+        }}
         toastOptions={{
           duration: 4000,
           style: {
@@ -1252,8 +1281,11 @@ const EmailComposerContent = () => {
             padding: '16px',
             borderRadius: '12px',
             boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            fontSize: '14px',
+            fontSize: isMobileViewport ? '13px' : '14px',
             fontWeight: '500',
+            maxWidth: isMobileViewport ? 'calc(100vw - 16px)' : '420px',
+            width: isMobileViewport ? '100%' : 'auto',
+            wordBreak: 'break-word'
           },
           success: {
             iconTheme: { primary: '#10b981', secondary: '#fff' },
@@ -1272,7 +1304,7 @@ const EmailComposerContent = () => {
       <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt,.csv" />
       
       {/* HEADER */}
-      <header className="h-16 border-b border-gray-200 bg-white flex items-center justify-between px-6 shrink-0 z-50 shadow-sm">
+      <header className="relative z-50 h-16 border-b border-gray-200 bg-white flex items-center justify-between px-6 shrink-0 shadow-sm">
         <div className="flex items-center gap-4">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded-lg transition-all lg:hidden text-gray-600 hover:text-gray-800">
             <Menu size={20} />
@@ -1290,7 +1322,7 @@ const EmailComposerContent = () => {
             </div>
           </div>
           
-          <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 ml-4">
+          <div className="ml-4 hidden bg-gray-100 p-1 rounded-lg border border-gray-200 lg:flex">
             {["single", "bulk"].map(m => (
               <button key={m} onClick={() => { setMode(m); setSelectedDoc(null); setSelectedClients([]); setAttachedDocuments([]); setAttachedFile(null); setProgress(0); setLastSendSummary(null); dispatchMutation.reset(); }} className={`px-4 py-2 rounded-md text-xs font-medium uppercase transition-all ${
                 mode === m ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-800 hover:bg-gray-200"
@@ -1303,7 +1335,7 @@ const EmailComposerContent = () => {
 
         <div className="relative flex items-center gap-3">
           {showVariables && (
-            <div className="absolute top-16 right-4 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-64">
+            <div className="absolute top-16 right-0 sm:right-4 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[min(16rem,92vw)]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold text-gray-800">Variables</span>
                 <button onClick={() => setShowVariables(false)} className="text-gray-400 hover:text-gray-600">
@@ -1327,7 +1359,7 @@ const EmailComposerContent = () => {
           )}
 
           {showHistoryPanel && (
-            <div className="absolute top-16 right-0 z-50 w-[380px] max-w-[92vw]">
+            <div className="absolute top-16 right-0 z-50 w-[min(380px,92vw)]">
               <EmailHistory />
             </div>
           )}
@@ -1375,10 +1407,33 @@ const EmailComposerContent = () => {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* SIDEBAR */}
-        <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shadow-sm ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-          <div className="p-5 space-y-6">
+        <aside className={`absolute inset-y-0 left-0 z-40 w-[min(22rem,92vw)] bg-white border-r border-gray-200 flex flex-col overflow-hidden transition-all duration-300 shadow-sm lg:static lg:w-80 lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+          <div className="shrink-0 border-b border-gray-100 p-5 space-y-6">
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-1 lg:hidden">
+              {["single", "bulk"].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    setMode(m);
+                    setSelectedDoc(null);
+                    setSelectedClients([]);
+                    setAttachedDocuments([]);
+                    setAttachedFile(null);
+                    setProgress(0);
+                    setLastSendSummary(null);
+                    dispatchMutation.reset();
+                  }}
+                  className={`rounded-md px-3 py-2 text-xs font-semibold uppercase transition-all ${
+                    mode === m ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {m === "single" ? "Single" : "Bulk"}
+                </button>
+              ))}
+            </div>
+
             <div className="relative group">
               <input type="text" placeholder="Search documents or clients..." value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg py-3 px-10 text-sm text-gray-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all placeholder-gray-400" />
               <Search className="absolute left-3 top-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
@@ -1485,9 +1540,16 @@ const EmailComposerContent = () => {
             ))}
           </div>
         </aside>
+        {isSidebarOpen && (
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="absolute inset-0 z-30 bg-black/30 lg:hidden"
+            aria-label="Close sidebar overlay"
+          />
+        )}
 
         {/* MAIN COMPOSER */}
-        <main className="flex-1 bg-white overflow-y-auto relative">
+        <main className="relative min-h-0 flex-1 overflow-y-auto bg-white">
           {/* Mobile Back Button */}
           {(selectedDoc || (mode === "bulk" && selectedClients.length > 0)) && (
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden fixed top-20 left-4 z-30 flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-gray-200 text-gray-700 shadow-sm font-medium text-sm hover:bg-gray-50 transition-all group">
@@ -1555,9 +1617,9 @@ const EmailComposerContent = () => {
                       </div>
                       <span className="text-xs text-gray-500">Click to apply template</span>
                     </div>
-                    <div className="flex flex-wrap gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {Object.entries(TEMPLATES).map(([key, t]) => (
-                        <button key={key} onClick={() => applyTemplate(key)} className={`flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium transition-all hover:scale-[1.02] ${
+                        <button key={key} onClick={() => applyTemplate(key)} className={`w-full flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium transition-all hover:scale-[1.02] ${
                           activeTemplate === key ? `${t.borderColor} ${t.bgColor} border-2 text-gray-800 shadow-sm` : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
                         }`}>
                           {t.icon} <span>{t.label}</span>
@@ -1669,7 +1731,7 @@ const EmailComposerContent = () => {
                               <label className="text-sm font-semibold text-gray-800">Message</label>
                               <div className="flex items-center gap-3">
                                 <span className="text-xs text-gray-500">{message.length} characters</span>
-                                <span className="text-xs text-gray-500">{message.split(/\s+/).filter(Boolean).length} words</span>
+                                <span className="text-xs text-gray-500">{wordCount} words</span>
                               </div>
                             </div>
                             <textarea ref={editorRef} value={message} onChange={(e) => setMessage(e.target.value)} className="w-full bg-white border border-gray-300 p-4 rounded-lg text-sm font-normal text-gray-700 outline-none h-64 resize-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all leading-relaxed font-sans shadow-inner" placeholder="Type your message here..." />

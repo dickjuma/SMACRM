@@ -598,30 +598,30 @@ const Receipts = () => {
       {/* Navigation Header - White/Blue Theme */}
       <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-blue-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-3 py-3 sm:h-16 sm:flex-row sm:items-center sm:justify-between sm:py-0">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-2.5 rounded-xl shadow-lg">
                 <Receipt className="w-6 h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">Payment Receipts</h1>
+              <div className="min-w-0">
+                <h1 className="truncate text-lg font-bold text-slate-900 sm:text-xl">Payment Receipts</h1>
                 <p className="text-xs text-slate-500 font-medium">Official Payment Verification System</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
-              <div className="relative">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-4">
+              <div className="relative w-full sm:w-auto">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search receipts..."
-                  className="pl-10 pr-4 py-2.5 w-64 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  className="w-full border border-slate-200 rounded-xl bg-white py-2.5 pl-10 pr-4 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 sm:w-64"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setShowAnalytics(!showAnalytics)}
                   className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:text-blue-600 hover:border-blue-200 transition-all"
@@ -648,10 +648,11 @@ const Receipts = () => {
                 
                 <button
                   onClick={downloadCSV}
-                  className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center gap-2"
+                  className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center gap-2"
                 >
                   <FileSpreadsheet size={18} />
-                  Export CSV
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">Export</span>
                 </button>
               </div>
             </div>
@@ -968,9 +969,9 @@ const Receipts = () => {
         </div>
 
         {/* Content Area */}
-        <div className="flex h-[calc(100vh-280px)] min-w-0 gap-4 md:gap-6 overflow-hidden">
+        <div className="flex h-[calc(100dvh-220px)] min-w-0 flex-col gap-4 overflow-visible md:h-[calc(100vh-280px)] md:flex-row md:gap-6 md:overflow-hidden">
           {/* Left Panel - Receipts List */}
-          <div className={`${isMobileList ? 'block' : 'hidden'} md:block w-full md:w-[400px] shrink-0 bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden`}>
+          <div className={`${isMobileList ? 'block' : 'hidden'} w-full shrink-0 overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm md:block md:w-[360px] lg:w-[400px]`}>
             <div className="h-full flex flex-col">
               <div className="p-4 border-b border-blue-100 bg-blue-50">
                 <div className="flex items-center justify-between">
@@ -1067,7 +1068,7 @@ const Receipts = () => {
           </div>
           
           {/* Right Panel - Receipt Preview */}
-          <div className={`${!isMobileList ? 'block' : 'hidden'} md:block flex-1 min-w-0 bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden`}>
+          <div className={`${!isMobileList ? 'block' : 'hidden'} min-w-0 flex-1 overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm md:block`}>
             {selectedReceipt ? (
               <>
                 <div className="h-full flex flex-col">

@@ -712,30 +712,30 @@ const Quotations = () => {
       {/* Navigation Header */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-3 py-3 sm:h-16 sm:flex-row sm:items-center sm:justify-between sm:py-0">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-2.5 rounded-xl shadow-lg">
                 <FileText className="w-6 h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">Quotation Management</h1>
+              <div className="min-w-0">
+                <h1 className="truncate text-lg font-bold text-slate-900 sm:text-xl">Quotation Management</h1>
                 <p className="text-xs text-slate-500 font-medium">Professional Quotation System v3.0</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
-              <div className="relative">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-4">
+              <div className="relative w-full sm:w-auto">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search quotations..."
-                  className="pl-10 pr-4 py-2.5 w-64 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                  className="w-full border border-slate-200 rounded-xl bg-white py-2.5 pl-10 pr-4 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 sm:w-64"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setShowAnalytics(!showAnalytics)}
                   className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:text-indigo-600 hover:border-indigo-200 transition-all"
@@ -762,10 +762,11 @@ const Quotations = () => {
                 
                 <button
                   onClick={() => setAdding(true)}
-                  className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-indigo-500/20 transition-all flex items-center gap-2"
+                  className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-indigo-500/20 transition-all flex items-center gap-2"
                 >
                   <Plus size={18} />
-                  New Quotation
+                  <span className="hidden sm:inline">New Quotation</span>
+                  <span className="sm:hidden">New</span>
                 </button>
               </div>
             </div>
@@ -1007,11 +1008,11 @@ const Quotations = () => {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Toolbar */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-6">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-            <div className="flex items-center gap-4">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:gap-4 lg:w-auto">
               <div className="flex bg-white border border-slate-200 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode("table")}
@@ -1030,7 +1031,7 @@ const Quotations = () => {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full sm:w-auto border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               >
                 <option value="date">Sort by Date</option>
                 <option value="expiryDate">Sort by Expiry Date</option>
@@ -1042,7 +1043,7 @@ const Quotations = () => {
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value)}
-                className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full sm:w-auto border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               >
                 <option value="desc">Descending</option>
                 <option value="asc">Ascending</option>
@@ -1051,7 +1052,7 @@ const Quotations = () => {
               <select
                 value={itemsPerPage}
                 onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full sm:w-auto border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               >
                 <option value="10">10 per page</option>
                 <option value="20">20 per page</option>
@@ -1060,7 +1061,7 @@ const Quotations = () => {
               </select>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex w-full justify-end items-center gap-2 lg:w-auto">
               <button
                 onClick={downloadCSV}
                 className="p-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-green-600 hover:border-green-200 transition-all"
@@ -1136,9 +1137,9 @@ const Quotations = () => {
             {/* Bulk Selection Bar */}
             {selectedQuotations.length > 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={handleSelectAll}
                         className="text-slate-400 hover:text-indigo-600"
@@ -1186,10 +1187,10 @@ const Quotations = () => {
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full min-w-[780px] border-collapse text-left">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      <th className="px-6 py-4 w-12">
+                      <th className="w-12 px-3 py-4 sm:px-6">
                         <button
                           onClick={handleSelectAll}
                           className="text-slate-400 hover:text-indigo-600"
@@ -1201,13 +1202,13 @@ const Quotations = () => {
                           )}
                         </button>
                       </th>
-                      <th className="px-6 py-4">Quotation</th>
-                      <th className="px-6 py-4">Client</th>
-                      <th className="px-6 py-4">Date</th>
-                      <th className="px-6 py-4">Expiry Date</th>
-                      <th className="px-6 py-4">Amount</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4 text-right">Actions</th>
+                      <th className="px-3 py-4 sm:px-6">Quotation</th>
+                      <th className="px-3 py-4 sm:px-6">Client</th>
+                      <th className="px-3 py-4 sm:px-6">Date</th>
+                      <th className="px-3 py-4 sm:px-6">Expiry Date</th>
+                      <th className="px-3 py-4 sm:px-6">Amount</th>
+                      <th className="px-3 py-4 sm:px-6">Status</th>
+                      <th className="px-3 py-4 text-right sm:px-6">Actions</th>
                     </tr>
                   </thead>
                   

@@ -1,27 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { authApi } from "../services/authApi";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 import { getInitials, resolveAvatarUrl } from "../utils/avatar";
+import { getSidebarNavigationForRole } from "../components/navigationConfig";
+
+const toHourLabel = (seconds) => `${(Number(seconds || 0) / 3600).toFixed(1)}h`;
 
 const Profile = () => {
   const { user, updateUser } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef(null);
   const [profile, setProfile] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    address: "",
-    department: "",
-    position: "",
-    location: "",
-    avatar: "",
-    status: "offline",
-    role: "user"
+    name: user?.name || "",
+    email: user?.email || "",
+    phone: user?.phone || "",
+    address: user?.address || "",
+    department: user?.department || "",
+    position: user?.position || "",
+    location: user?.location || "",
+    avatar: user?.avatar || "",
+    status: user?.onlineStatus || "offline",
+    role: user?.role || "user"
   });
   const [stats, setStats] = useState({
     totalLabel: "0h",
@@ -35,12 +40,25 @@ const Profile = () => {
     confirmPassword: ""
   });
 
-  const loadProfile = async () => {
+  const quickMenuItems = useMemo(() => {
+    const role = String(user?.role || "user").toLowerCase();
+    return getSidebarNavigationForRole(role)
+      .flatMap((group) => group.items)
+      .slice(0, 8);
+  }, [user?.role]);
+
+  const loadProfile = async (options = {}) => {
+    const force = Boolean(options?.force);
     try {
-      setLoading(true);
-      const response = await authApi.getProfile();
+      if (force || (!profile.name && !profile.email)) setLoading(true);
+      const response = await authApi.getProfile({ force });
       const data = response || {};
-      const tracked = data?.stats?.trackedTime || {};
+      const tracked = data?.stats?.trackedTime || data?.trackedTime || {};
+      const totalSeconds = Number(tracked?.totalSeconds ?? data?.stats?.totalSeconds ?? 0);
+      const todaySeconds = Number(tracked?.todaySeconds ?? data?.stats?.todaySeconds ?? 0);
+      const currentSessionSeconds = Number(
+        tracked?.currentSessionSeconds ?? data?.stats?.currentSessionSeconds ?? 0
+      );
 
       const nextProfile = {
         name: data?.name || "",
@@ -51,15 +69,16 @@ const Profile = () => {
         position: data?.position || "",
         location: data?.location || "",
         avatar: data?.avatar || "",
-        status: data?.onlineStatus || "offline",
+        status: data?.onlineStatus || data?.status || user?.onlineStatus || "offline",
         role: data?.role || "user"
       };
 
       setProfile(nextProfile);
       setStats({
-        totalLabel: tracked?.totalLabel || "0h",
-        todayLabel: tracked?.todayLabel || "0h",
-        currentSessionLabel: tracked?.currentSessionLabel || "0h",
+        totalLabel: tracked?.totalLabel || data?.stats?.totalLabel || toHourLabel(totalSeconds),
+        todayLabel: tracked?.todayLabel || data?.stats?.todayLabel || toHourLabel(todaySeconds),
+        currentSessionLabel:
+          tracked?.currentSessionLabel || data?.stats?.currentSessionLabel || toHourLabel(currentSessionSeconds),
         totalLogins: data?.stats?.totalLogins || 0
       });
 
@@ -87,6 +106,22 @@ const Profile = () => {
     loadProfile();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    setProfile((prev) => ({
+      ...prev,
+      name: prev.name || user?.name || "",
+      email: prev.email || user?.email || "",
+      phone: prev.phone || user?.phone || "",
+      department: prev.department || user?.department || "",
+      position: prev.position || user?.position || "",
+      location: prev.location || user?.location || "",
+      avatar: prev.avatar || user?.avatar || "",
+      role: prev.role || user?.role || "user",
+      status: prev.status || user?.onlineStatus || "offline"
+    }));
+  }, [user]);
+
   const handleSaveProfile = async (event) => {
     event.preventDefault();
     try {
@@ -113,7 +148,7 @@ const Profile = () => {
         });
       }
       toast.success("Profile updated");
-      loadProfile();
+      loadProfile({ force: true });
     } catch (error) {
       toast.error(error?.response?.data?.message || "Failed to update profile");
     } finally {
@@ -147,6 +182,7 @@ const Profile = () => {
         });
       }
       toast.success("Profile photo updated");
+      loadProfile({ force: true });
     } catch (error) {
       toast.error(error?.response?.data?.message || "Failed to upload profile photo");
     } finally {
@@ -180,17 +216,40 @@ const Profile = () => {
     }
   };
 
-  if (loading) {
+  if (loading && !profile.name && !profile.email) {
     return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Loading profile...</div>;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="sticky top-16 z-20 -mx-1 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm backdrop-blur sm:hidden">
+        <div className="flex w-max items-center gap-2">
+          {quickMenuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = item.link === "/profile";
+            return (
+              <button
+                key={item.link}
+                onClick={() => navigate(item.link)}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  isActive
+                    ? "bg-indigo-600 text-white"
+                    : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Icon size={14} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <h2 className="text-lg font-bold text-slate-900">My Profile</h2>
         <p className="mt-1 text-sm text-slate-500">Manage your account details and track your own time.</p>
 
-        <div className="mt-4 flex items-center gap-4">
+        <div className="mt-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           {resolveAvatarUrl(profile.avatar) ? (
             <img
               src={resolveAvatarUrl(profile.avatar)}
@@ -214,7 +273,7 @@ const Profile = () => {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingAvatar}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 sm:w-auto"
             >
               {uploadingAvatar ? "Uploading..." : "Upload Passport Photo"}
             </button>
@@ -222,10 +281,10 @@ const Profile = () => {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Status</p>
-            <p className="mt-1 font-semibold text-slate-900">{profile.status}</p>
+            <p className="mt-1 font-semibold capitalize text-slate-900">{profile.status}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Today</p>
@@ -242,7 +301,7 @@ const Profile = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSaveProfile} className="rounded-2xl border border-slate-200 bg-white p-6">
+      <form onSubmit={handleSaveProfile} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-bold text-slate-900">Edit Details</h3>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="text-sm">
@@ -311,7 +370,7 @@ const Profile = () => {
         </button>
       </form>
 
-      <form onSubmit={handleChangePassword} className="rounded-2xl border border-slate-200 bg-white p-6">
+      <form onSubmit={handleChangePassword} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-bold text-slate-900">Change Password</h3>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="text-sm">

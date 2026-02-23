@@ -1624,14 +1624,15 @@ const Clients = () => {
       )}
       
       {/* ENHANCED TOP NAVIGATION */}
-      <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 px-6 h-16 flex items-center justify-between shadow">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-3">
+      <nav className="sticky top-0 z-50 border-b border-gray-200 bg-white px-3 py-3 shadow sm:px-6 sm:py-0 sm:h-16">
+        <div className="flex flex-col gap-3 sm:h-16 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-8">
+            <div className="flex min-w-0 items-center gap-3">
             <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow">
               <Building2 size={20} />
             </div>
-            <div>
-              <span className="text-sm font-bold tracking-tight text-gray-900">Enterprise Client Registry</span>
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-bold tracking-tight text-gray-900">Enterprise Client Registry</span>
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <Shield size={10} />
                 <span>v2.1 • Development Mode</span>
@@ -1653,8 +1654,8 @@ const Clients = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-1 justify-end">
-          <div className="relative flex-1 max-w-md">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:flex-1 sm:justify-end">
+          <div className="relative w-full sm:flex-1 sm:max-w-md">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input 
               type="text" 
@@ -1665,7 +1666,7 @@ const Clients = () => {
             />
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <button
               onClick={() => setShowImport(true)}
               className="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:text-blue-600 hover:border-blue-200 transition-all"
@@ -1690,9 +1691,12 @@ const Clients = () => {
               }}
               className="bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 transition-all flex items-center gap-2"
             >
-              <Plus size={18} /> New Client
+              <Plus size={18} />
+              <span className="hidden sm:inline">New Client</span>
+              <span className="sm:hidden">New</span>
             </button>
-          </div>
+            </div>
+        </div>
         </div>
       </nav>
 
@@ -1742,10 +1746,10 @@ const Clients = () => {
         </div>
       )}
 
-      <main className="max-w-[1920px] mx-auto p-6 space-y-4">
+      <main className="mx-auto max-w-[1920px] space-y-4 px-3 py-4 sm:px-4 md:p-6">
         {/* ENHANCED ACTION BAR */}
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex bg-white border border-gray-200 p-1 rounded-lg">
                 <button 
@@ -1781,7 +1785,7 @@ const Clients = () => {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 lg:w-auto">
               {selectedIds.length > 0 && (
                 <>
                   <button 
@@ -1844,7 +1848,7 @@ const Clients = () => {
           ) : viewMode === "table" ? (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full min-w-[780px] border-collapse text-left">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th className="pl-6 pr-4 py-4 w-12">
