@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../services/http";
+import socketService from "../services/socket";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  AreaChart,
+  Area
+} from "recharts";
 import { 
   UserPlus, Trash2, ShieldCheck, Database, 
   Edit2, Save, X, Power, PowerOff, 
@@ -76,12 +88,19 @@ const UserAdmin = () => {
 
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
+  const [globalActivity, setGlobalActivity] = useState([]);
+  const [globalActivityFilter, setGlobalActivityFilter] = useState({
+    userId: "",
+    module: "",
+    actionType: "",
+    status: ""
+  });
 
   // --- REAL API CALLS ---
   const fetchUsers = async () => {
     try {
-      setLoading(true);
       const params = new URLSearchParams();
       
       if (filters.search) params.append('search', filters.search);
@@ -99,8 +118,6 @@ const UserAdmin = () => {
       console.error("Error fetching users:", error);
       toast.error("Could not load user data");
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -139,8 +156,24 @@ const UserAdmin = () => {
     }
   };
 
+  const fetchGlobalActivity = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append("limit", "50");
+      if (globalActivityFilter.userId) params.append("userId", globalActivityFilter.userId);
+      if (globalActivityFilter.module) params.append("module", globalActivityFilter.module);
+      if (globalActivityFilter.actionType) params.append("actionType", globalActivityFilter.actionType);
+      if (globalActivityFilter.status) params.append("status", globalActivityFilter.status);
+      const response = await api.get(`/admin/activity?${params.toString()}`);
+      return response?.data?.activities || response?.data?.notifications || [];
+    } catch (error) {
+      console.error("Error fetching global activity:", error);
+      return [];
+    }
+  };
+
   // --- QUERIES ---
-  const { data: usersData = {}, refetch: refetchUsers } = useQuery({
+  const { data: usersData, refetch: refetchUsers, isFetching: usersFetching } = useQuery({
     queryKey: ["users", filters, advancedFilters],
     queryFn: fetchUsers,
     onError: (error) => {
@@ -148,22 +181,64 @@ const UserAdmin = () => {
     }
   });
 
-  const users = usersData.data || [];
-  const pagination = usersData.pagination || { page: 1, total: 0, pages: 1 };
+  const { data: recentActivityData } = useQuery({
+    queryKey: ["admin-activity", globalActivityFilter],
+    queryFn: fetchGlobalActivity
+  });
+
+  const users = usersData?.data || [];
+  const pagination = usersData?.pagination || { page: 1, total: 0, pages: 1 };
 
   useEffect(() => {
-    if (usersData.stats) {
+    if (usersData?.stats) {
       setStats(normalizeStats(usersData.stats));
     } else {
       fetchStats();
     }
-  }, [usersData]);
+  }, [usersData?.stats]);
 
   useEffect(() => {
     if (selectedUser) {
       fetchUserActivity(selectedUser._id);
     }
   }, [selectedUser]);
+
+  useEffect(() => {
+    if (Array.isArray(recentActivityData)) {
+      setGlobalActivity(recentActivityData);
+    }
+  }, [recentActivityData]);
+
+  useEffect(() => {
+    socketService.connect();
+
+    const unsubPresence = socketService.on("presence:update", () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    });
+
+    const unsubActivity = socketService.on("activity:new", (payload) => {
+      if (!payload) return;
+      const normalized = {
+        ...payload,
+        id: payload._id || payload.id,
+        createdAt: payload.createdAt || new Date().toISOString(),
+        message: payload.message || payload.action || "Activity update"
+      };
+      setGlobalActivity((prev) => [normalized, ...prev].slice(0, 80));
+      toast.success(normalized.message, { duration: 2200 });
+    });
+
+    return () => {
+      unsubPresence?.();
+      unsubActivity?.();
+      socketService.disconnect();
+    };
+  }, [queryClient]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setPresenceNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // --- MUTATIONS ---
   const addUserMutation = useMutation({
@@ -172,8 +247,9 @@ const UserAdmin = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["users"]);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       setNewUser({ name: "", email: "", password: "", role: "user", department: "Unassigned", phone: "", position: "" });
+      setShowCreateModal(false);
       toast.success("User created successfully");
       fetchStats();
     },
@@ -193,7 +269,7 @@ const UserAdmin = () => {
       return response.data;
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries(["users"]);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       const fallbackAction = variables?.nextAction === "activate" ? "activated" : "deactivated";
       toast.success(data?.message || `User ${fallbackAction} successfully`);
       fetchStats();
@@ -214,7 +290,7 @@ const UserAdmin = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["users"]);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       setEditingId(null);
       toast.success("User updated successfully");
     },
@@ -229,7 +305,7 @@ const UserAdmin = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["users"]);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       setDeleteConfirmId(null);
       toast.success("User deleted successfully");
       fetchStats();
@@ -239,13 +315,26 @@ const UserAdmin = () => {
     }
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (id) => {
+      const response = await api.post(`/users/${id}/reset-password`);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      toast.success(data?.message || "Password reset and emailed successfully");
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Failed to reset password");
+    }
+  });
+
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ userIds, updates }) => {
       const response = await api.post('/users/bulk-update', { userIds, updates });
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["users"]);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       setSelectedUsers([]);
       toast.success("Users updated successfully");
       fetchStats();
@@ -278,6 +367,12 @@ const UserAdmin = () => {
 
   const executeDeletion = (id) => {
     deleteUserMutation.mutate(id);
+  };
+
+  const handleResetPassword = (user) => {
+    const confirmed = window.confirm(`Reset password for ${user?.name || "this user"} and send by email?`);
+    if (!confirmed) return;
+    resetPasswordMutation.mutate(user._id);
   };
 
   const handleViewActivity = (user) => {
@@ -391,7 +486,7 @@ const UserAdmin = () => {
       });
       
       toast.success(`Imported ${response.data.importedCount} users successfully`);
-      queryClient.invalidateQueries(["users"]);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       fetchStats();
       setShowImportModal(false);
     } catch (error) {
@@ -419,10 +514,29 @@ const UserAdmin = () => {
     }
   };
 
-  const formatLastSeen = (date) => {
-    if (!date) return 'Never';
-    return formatDistanceToNow(new Date(date), { addSuffix: true });
+  const deriveOnlineStatus = (user) => {
+    if (!user) return "offline";
+    if (String(user.onlineStatus || "").toLowerCase() === "online") return "online";
+    if (!user.lastSeen) return "offline";
+    const diffMinutes = (presenceNow - new Date(user.lastSeen).getTime()) / 60000;
+    if (diffMinutes <= 2) return "online";
+    if (diffMinutes <= 30) return "away";
+    return "offline";
   };
+
+  const getSeverityTone = (severity, status) => {
+    if (status === "failed" || severity === "high") return "bg-red-100 text-red-700 border-red-200";
+    if (severity === "medium") return "bg-amber-100 text-amber-700 border-amber-200";
+    return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  };
+
+  const formatLastSeen = (user) => {
+    if (!user?.lastSeen) return "Never";
+    if (deriveOnlineStatus(user) === "online") return "Active now";
+    return formatDistanceToNow(new Date(user.lastSeen), { addSuffix: true });
+  };
+
+  const liveOnlineUsersCount = users.filter((u) => deriveOnlineStatus(u) === "online").length;
 
   const getPerformanceColor = (score) => {
     if (score >= 90) return 'text-green-600 bg-green-50';
@@ -431,6 +545,18 @@ const UserAdmin = () => {
     if (score >= 60) return 'text-orange-600 bg-orange-50';
     return 'text-red-600 bg-red-50';
   };
+
+  const onlineTimeChartData = users
+    .slice(0, 12)
+    .map((u) => ({
+      name: (u.name || "").split(" ")[0],
+      today: Number(u?.onlineTime?.todayMinutes || 0),
+      total: Number(u?.onlineTime?.totalMinutes || 0)
+    }));
+
+  const activityTrendData = Array.isArray(activityStats?.chart) ? activityStats.chart : [];
+  const activityModules = [...new Set(globalActivity.map((item) => item.module).filter(Boolean))];
+  const activityTypes = [...new Set(globalActivity.map((item) => item.actionType).filter(Boolean))];
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans antialiased">
@@ -458,6 +584,8 @@ const UserAdmin = () => {
               <button
                 onClick={() => setShowActivityModal(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Close Activity Logs"
+                aria-label="Close Activity Logs"
               >
                 <X size={20} className="text-gray-500" />
               </button>
@@ -481,6 +609,22 @@ const UserAdmin = () => {
                   <p className="text-xl font-semibold text-gray-900">{activityStats.currentSessionLabel || "-"}</p>
                 </div>
               </div>
+              {activityTrendData.length > 0 && (
+                <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+                  <p className="text-sm font-semibold text-gray-800 mb-3">Online Time Trend (14 days)</p>
+                  <div className="h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={activityTrendData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Area type="monotone" dataKey="minutes" stroke="#2563eb" fill="#bfdbfe" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
               {activityLogs.length > 0 ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-gray-500 pb-2 border-b">
@@ -500,10 +644,8 @@ const UserAdmin = () => {
                       <div className="text-sm text-gray-600">{format(new Date(log.timestamp || log.createdAt), 'MMM d, yyyy h:mm a')}</div>
                       <div className="text-sm text-gray-700">{log.onlineDurationLabel || '-'}</div>
                       <div>
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          log.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {log.status}
+                        <span className={`px-2 py-1 rounded text-xs font-semibold border ${getSeverityTone(log.severity, log.status)}`}>
+                          {(log.severity || log.status || "success").toUpperCase()}
                         </span>
                       </div>
                     </div>
@@ -545,6 +687,8 @@ const UserAdmin = () => {
               <button
                 onClick={() => setShowProfileModal(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Close Profile"
+                aria-label="Close Profile"
               >
                 <X size={20} className="text-gray-500" />
               </button>
@@ -659,6 +803,8 @@ const UserAdmin = () => {
               <button
                 onClick={() => setShowImportModal(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Close Import"
+                aria-label="Close Import"
               >
                 <X size={20} className="text-gray-500" />
               </button>
@@ -714,6 +860,13 @@ const UserAdmin = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-sm text-sm font-medium"
+            >
+              <UserPlus size={16} />
+              New Employee
+            </button>
             <button 
               onClick={() => setShowImportModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:border-blue-300 text-gray-700 hover:text-blue-600 rounded-lg transition-all shadow-sm text-sm font-medium"
@@ -735,7 +888,7 @@ const UserAdmin = () => {
               }}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:border-blue-300 text-gray-700 hover:text-blue-600 rounded-lg transition-all shadow-sm text-sm font-medium"
             >
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              <RefreshCw size={16} className={usersFetching ? "animate-spin" : ""} />
               Refresh
             </button>
           </div>
@@ -759,7 +912,7 @@ const UserAdmin = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500 mb-1">Active Now</p>
-                <p className="text-2xl font-bold text-green-600">{stats.online || 0}</p>
+                <p className="text-2xl font-bold text-green-600">{liveOnlineUsersCount}</p>
               </div>
               <div className="p-2 bg-green-50 rounded-lg">
                 <Globe className="text-green-600" size={20} />
@@ -791,8 +944,7 @@ const UserAdmin = () => {
             </div>
           </div>
         </div>
-
-        {/* Quick Stats and Filters */}
+{/* Quick Stats and Filters */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-6">
@@ -843,6 +995,7 @@ const UserAdmin = () => {
               <button
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                 className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                title={showAdvancedFilters ? "Hide advanced filters" : "Show advanced filters"}
               >
                 <Filter size={14} />
                 {showAdvancedFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -936,6 +1089,8 @@ const UserAdmin = () => {
               <button
                 onClick={() => setSelectedUsers([])}
                 className="p-1.5 hover:bg-white/50 rounded-lg transition-colors"
+                title="Clear selected users"
+                aria-label="Clear selected users"
               >
                 <X size={16} className="text-gray-600" />
               </button>
@@ -943,113 +1098,70 @@ const UserAdmin = () => {
           </div>
         )}
 
-        {/* ADD USER SECTION */}
-        <section className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
-            <h2 className="font-semibold text-gray-700 flex items-center gap-2">
-              <UserPlus size={18} className="text-blue-600" /> Create New User
-            </h2>
-          </div>
-          <form onSubmit={handleAddUser} className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Full Name *</label>
-                <input 
-                  placeholder="John Wekesa" 
-                  value={newUser.name} 
-                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
-                  required
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Email *</label>
-                <input 
-                  type="email"
-                  placeholder="john@company.com" 
-                  value={newUser.email} 
-                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
-                  required
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Role</label>
-                <select 
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({...newUser, role: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                {showCreateModal && (
+          <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl w-full max-w-5xl overflow-hidden shadow-2xl">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <UserPlus size={18} className="text-blue-600" /> Add New Employee
+                </h2>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                  title="Close New Employee"
+                  aria-label="Close New Employee"
                 >
-                  <option value="user">User</option>
-                  <option value="team_lead">Team Lead</option>
-                  <option value="manager">Manager</option>
-                  <option value="admin">Admin</option>
-                  <option value="superadmin">Super Admin</option>
-                </select>
-              </div>
-              
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Department</label>
-                <input 
-                  placeholder="Engineering" 
-                  value={newUser.department} 
-                  onChange={(e) => setNewUser({...newUser, department: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Phone</label>
-                <input 
-                  type="tel"
-                  placeholder="+254 712 345 678" 
-                  value={newUser.phone} 
-                  onChange={(e) => setNewUser({...newUser, phone: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Position</label>
-                <input 
-                  placeholder="Software Developer" 
-                  value={newUser.position} 
-                  onChange={(e) => setNewUser({...newUser, position: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Password *</label>
-                <input 
-                  type="password"
-                  placeholder="••••••••" 
-                  value={newUser.password} 
-                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
-                  required
-                />
-              </div>
-              
-              <div className="flex items-end">
-                <button 
-                  type="submit" 
-                  disabled={addUserMutation.isLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2.5 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-                >
-                  {addUserMutation.isLoading ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <UserPlus size={14} />
-                  )}
-                  {addUserMutation.isLoading ? "Creating..." : "Create User"}
+                  <X size={18} className="text-gray-500" />
                 </button>
               </div>
+              <form onSubmit={handleAddUser} className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Full Name *</label>
+                    <input placeholder="John Wekesa" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Email *</label>
+                    <input type="email" placeholder="john@company.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Role</label>
+                    <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="user">User</option>
+                      <option value="team_lead">Team Lead</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                      <option value="superadmin">Super Admin</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Department</label>
+                    <input placeholder="Engineering" value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Phone</label>
+                    <input type="tel" placeholder="+254 712 345 678" value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Position</label>
+                    <input placeholder="Software Developer" value={newUser.position} onChange={(e) => setNewUser({ ...newUser, position: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Password *</label>
+                    <input type="password" placeholder="********" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+                  </div>
+                </div>
+                <div className="mt-5 flex justify-end gap-3">
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-sm">Cancel</button>
+                  <button type="submit" disabled={addUserMutation.isLoading} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors text-sm flex items-center justify-center gap-2">
+                    {addUserMutation.isLoading ? <RefreshCw size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                    {addUserMutation.isLoading ? "Creating..." : "Create User"}
+                  </button>
+                </div>
+              </form>
             </div>
-          </form>
-        </section>
+          </div>
+        )}
 
         {/* DATA TABLE */}
         <section className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
@@ -1094,7 +1206,9 @@ const UserAdmin = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {users.map(u => (
+                {users.map((u) => {
+                  const liveStatus = deriveOnlineStatus(u);
+                  return (
                   <tr key={u._id} className={`hover:bg-gray-50 ${!u.isActive ? 'opacity-60' : ''}`}>
                     {/* Checkbox Column */}
                     <td className="px-6 py-4">
@@ -1121,7 +1235,7 @@ const UserAdmin = () => {
                               {getInitials(u.name)}
                             </div>
                           )}
-                          <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(u.onlineStatus)}`}></div>
+                          <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(liveStatus)}`}></div>
                         </div>
                         <div>
                           <div className="flex items-center gap-1">
@@ -1173,6 +1287,8 @@ const UserAdmin = () => {
                             <button 
                               onClick={() => setEditingId(null)} 
                               className="px-2 py-1 text-gray-400 bg-gray-50 hover:bg-gray-100 rounded text-xs font-medium transition-colors"
+                              title="Cancel edit"
+                              aria-label="Cancel edit"
                             >
                               <X size={12} />
                             </button>
@@ -1198,15 +1314,15 @@ const UserAdmin = () => {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <div className="flex items-center gap-1">
-                            <div className={`w-2 h-2 rounded-full ${getStatusColor(u.onlineStatus)}`} />
-                            <span className="text-sm text-gray-800 capitalize">{u.onlineStatus || 'offline'}</span>
+                            <div className={`w-2 h-2 rounded-full ${getStatusColor(liveStatus)}`} />
+                            <span className="text-sm text-gray-800 capitalize">{liveStatus || 'offline'}</span>
                           </div>
                           <div className={`px-1.5 py-0.5 rounded text-xs font-medium ${u.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                             {u.isActive ? 'ACTIVE' : 'INACTIVE'}
                           </div>
                         </div>
                         <div className="text-xs text-gray-500">
-                          Last seen: {formatLastSeen(u.lastSeen)}
+                          Last seen: {formatLastSeen(u)}
                         </div>
                         <div className="text-xs text-gray-500">
                           Logins: {u.loginCount || 0}
@@ -1275,18 +1391,31 @@ const UserAdmin = () => {
                           {u.isActive ? <Power size={14} /> : <PowerOff size={14} />}
                         </button>
 
+                        <button
+                          onClick={() => handleResetPassword(u)}
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                          title="Reset Password"
+                          disabled={resetPasswordMutation.isLoading}
+                        >
+                          <Key size={14} />
+                        </button>
+
                         {deleteConfirmId === u._id ? (
                           <div className="flex items-center gap-1 bg-red-50 border border-red-100 p-1 rounded animate-in fade-in slide-in-from-right-2">
                             <span className="text-xs font-medium text-red-600 px-1">Delete?</span>
                             <button 
                               onClick={() => executeDeletion(u._id)} 
                               className="p-1 bg-red-600 text-white rounded hover:bg-red-700 shadow-sm transition-colors"
+                              title="Confirm delete user"
+                              aria-label="Confirm delete user"
                             >
                               <Check size={12} />
                             </button>
                             <button 
                               onClick={() => setDeleteConfirmId(null)} 
                               className="p-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300 transition-colors"
+                              title="Cancel delete"
+                              aria-label="Cancel delete"
                             >
                               <X size={12} />
                             </button>
@@ -1303,13 +1432,14 @@ const UserAdmin = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
           
           {/* Empty State */}
-          {users.length === 0 && !loading && (
+          {users.length === 0 && !usersFetching && (
             <div className="py-16 flex flex-col items-center justify-center text-gray-400 gap-3">
               <Database size={48} />
               <p className="font-medium text-gray-500">No users found</p>
@@ -1330,7 +1460,7 @@ const UserAdmin = () => {
           )}
 
           {/* Loading State */}
-          {loading && (
+          {usersFetching && (
             <div className="py-12 flex flex-col items-center justify-center">
               <RefreshCw size={24} className="animate-spin text-blue-600 mb-3" />
               <p className="text-gray-600 font-medium">Loading user data...</p>
@@ -1368,6 +1498,72 @@ const UserAdmin = () => {
               </div>
             </div>
           )}
+        </section>
+        <section className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+              <Activity size={18} className="text-blue-600" /> Live Activity Feed
+            </h3>
+            <button
+              onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-activity"] })}
+              className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
+            >
+              Refresh
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <select value={globalActivityFilter.userId} onChange={(e) => setGlobalActivityFilter((p) => ({ ...p, userId: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">All Users</option>
+              {users.map((u) => (<option key={u._id} value={u._id}>{u.name}</option>))}
+            </select>
+            <select value={globalActivityFilter.module} onChange={(e) => setGlobalActivityFilter((p) => ({ ...p, module: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">All Modules</option>
+              {activityModules.map((m) => (<option key={m} value={m}>{m}</option>))}
+            </select>
+            <select value={globalActivityFilter.actionType} onChange={(e) => setGlobalActivityFilter((p) => ({ ...p, actionType: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">All Actions</option>
+              {activityTypes.map((a) => (<option key={a} value={a}>{a}</option>))}
+            </select>
+            <select value={globalActivityFilter.status} onChange={(e) => setGlobalActivityFilter((p) => ({ ...p, status: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">All Status</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-1 rounded-lg border border-gray-200 p-3">
+              <p className="text-sm font-medium text-gray-700 mb-2">Online Time (Top 12)</p>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={onlineTimeChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Bar dataKey="today" fill="#2563eb" name="Today (min)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="lg:col-span-2 rounded-lg border border-gray-200 p-3">
+              <p className="text-sm font-medium text-gray-700 mb-2">Recent Actions</p>
+              <div className="max-h-56 overflow-y-auto space-y-2">
+                {globalActivity.length > 0 ? globalActivity.slice(0, 50).map((item) => (
+                  <div key={item.id || item._id} className="flex items-start justify-between gap-3 border border-gray-100 rounded-lg p-2">
+                    <div>
+                      <p className="text-sm text-gray-900">{item.message || item.action}</p>
+                      <p className="text-xs text-gray-500">{item.actorName || "System"} - {item.module || "system"} - {item.actionType || "other"}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded border ${getSeverityTone(item.severity, item.status)}`}>
+                      {(item.severity || item.status || "success").toUpperCase()}
+                    </span>
+                  </div>
+                )) : (
+                  <p className="text-sm text-gray-500">No activity captured yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </div>

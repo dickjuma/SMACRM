@@ -14,12 +14,53 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/http";
+import socketService from "../services/socket";
 import { getRouteSearchIndexForRole } from "./navigationConfig";
 import { getInitials, resolveAvatarUrl } from "../utils/avatar";
 
+const toEpoch = (value) => {
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+const getSeverity = (item = {}) => {
+  if (item?.severity) return String(item.severity).toLowerCase();
+  if (String(item?.status || "").toLowerCase() === "failed") return "high";
+  if (["delete", "auth"].includes(String(item?.actionType || "").toLowerCase())) return "medium";
+  return "low";
+};
+
+const buildNotification = (item = {}) => {
+  const createdAt = item?.createdAt || item?.timestamp || new Date().toISOString();
+  return {
+    id: item?.id || item?._id || `${item?.module || "system"}-${createdAt}`,
+    title: item?.module ? String(item.module).toUpperCase() : "SYSTEM",
+    message: item?.message || item?.action || "Activity update",
+    actor: item?.actorName || item?.user || "System",
+    module: item?.module || "system",
+    actionType: item?.actionType || "activity",
+    status: item?.status || "success",
+    severity: getSeverity(item),
+    createdAt,
+    timeAgo: item?.timeAgo || "just now"
+  };
+};
+
+const applyNotificationPrefs = (rows = [], prefs = {}) =>
+  rows.filter((item) => {
+    if (!prefs.emailNotifications) return false;
+    const message = String(item?.message || "").toLowerCase();
+    const moduleName = String(item?.module || "").toLowerCase();
+    const actionType = String(item?.actionType || "").toLowerCase();
+    if (!prefs.newClientCreated && moduleName === "clients" && actionType === "create") return false;
+    if (!prefs.invoicePaid && moduleName === "invoices" && message.includes("paid")) return false;
+    if (!prefs.invoiceOverdue && moduleName === "invoices" && message.includes("overdue")) return false;
+    return true;
+  });
+
 const Navbar = () => {
   const { user, logout } = useAuth();
-  const role = user?.role || "user";
+  const role = String(user?.role || "user").toLowerCase();
   const isAdmin = role === "admin" || role === "superadmin";
   const location = useLocation();
   const navigate = useNavigate();
@@ -31,6 +72,7 @@ const Navbar = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [lastReadAt, setLastReadAt] = useState(0);
   const [notificationPrefs, setNotificationPrefs] = useState({
     emailNotifications: true,
     invoicePaid: true,
@@ -71,6 +113,28 @@ const Navbar = () => {
     setNotificationOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    const key = `notif_last_read_${user?._id || "anon"}`;
+    const stored = Number(localStorage.getItem(key) || 0);
+    setLastReadAt(stored);
+  }, [user?._id]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    socketService.connect();
+    const unsubActivity = socketService.on("activity:new", (payload) => {
+      const next = buildNotification(payload || {});
+      setNotifications((prev) => {
+        if (prev.some((item) => item.id === next.id)) return prev;
+        return [next, ...prev].slice(0, 100);
+      });
+    });
+    return () => {
+      unsubActivity?.();
+      socketService.disconnect();
+    };
+  }, [isAdmin]);
+
   const fetchNotifications = async () => {
     if (!isAdmin) {
       setNotifications([]);
@@ -80,7 +144,7 @@ const Navbar = () => {
     try {
       setNotificationsLoading(true);
       const [activityResponse, settingsResponse] = await Promise.all([
-        api.get("/admin/activity", { params: { limit: 30 } }),
+        api.get("/admin/activity", { params: { limit: 60 } }),
         api.get("/settings")
       ]);
 
@@ -88,19 +152,8 @@ const Navbar = () => {
       setNotificationPrefs((prev) => ({ ...prev, ...prefs }));
 
       const rows = activityResponse?.data?.notifications || [];
-      const filteredRows = rows.filter((item) => {
-        if (!prefs.emailNotifications) return false;
-
-        const message = String(item?.message || "").toLowerCase();
-        const moduleName = String(item?.module || "").toLowerCase();
-
-        if (!prefs.newClientCreated && moduleName === "clients" && item?.actionType === "create") return false;
-        if (!prefs.invoicePaid && message.includes("paid")) return false;
-        if (!prefs.invoiceOverdue && message.includes("overdue")) return false;
-
-        return true;
-      });
-
+      const mergedPrefs = { ...notificationPrefs, ...prefs };
+      const filteredRows = applyNotificationPrefs(rows, mergedPrefs).map(buildNotification);
       setNotifications(filteredRows);
     } catch (error) {
       setNotifications([]);
@@ -116,7 +169,14 @@ const Navbar = () => {
     return () => clearInterval(timer);
   }, [isAdmin]);
 
-  const unreadCount = notifications.length;
+  const unreadCount = notifications.filter((item) => toEpoch(item.createdAt) > Number(lastReadAt || 0)).length;
+
+  const markAllRead = () => {
+    const nextRead = Date.now();
+    const key = `notif_last_read_${user?._id || "anon"}`;
+    localStorage.setItem(key, String(nextRead));
+    setLastReadAt(nextRead);
+  };
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -169,7 +229,11 @@ const Navbar = () => {
         {isAdmin && (
           <div className="relative" ref={notificationRef}>
             <button
-              onClick={() => setNotificationOpen((prev) => !prev)}
+              onClick={() => {
+                const next = !notificationOpen;
+                setNotificationOpen(next);
+                if (next) markAllRead();
+              }}
               className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
               title="Notifications"
             >
@@ -185,12 +249,20 @@ const Navbar = () => {
               <div className="absolute right-0 mt-2 max-h-[520px] w-[400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">Admin Notifications</p>
-                  <button
-                    onClick={fetchNotifications}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-500"
-                  >
-                    Refresh
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={markAllRead}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-800 dark:text-slate-300"
+                    >
+                      Mark read
+                    </button>
+                    <button
+                      onClick={fetchNotifications}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-500"
+                    >
+                      Refresh
+                    </button>
+                  </div>
                 </div>
                 <div className="max-h-[460px] overflow-y-auto">
                   {notificationsLoading && (
@@ -202,9 +274,23 @@ const Navbar = () => {
                   {!notificationsLoading &&
                     notifications.map((item) => (
                       <div key={item.id} className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{item.title}</p>
+                          <span
+                            className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                              item.severity === "high"
+                                ? "bg-rose-100 text-rose-700"
+                                : item.severity === "medium"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {item.severity}
+                          </span>
+                        </div>
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.message}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
-                          <span className="rounded bg-slate-100 px-2 py-0.5 dark:bg-slate-800">{item.user || item.actor || "System"}</span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 dark:bg-slate-800">{item.actor || "System"}</span>
                           <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
                             {item.actionType || "activity"}
                           </span>

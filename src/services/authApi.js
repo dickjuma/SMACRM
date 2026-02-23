@@ -29,13 +29,13 @@ export const authApi = {
   // Get user profile
   getProfile: async () => {
     const response = await api.get('/auth/profile');
-    return response.data;
+    return response.data?.data || {};
   },
 
   // Update user profile
   updateProfile: async (profileData) => {
     const response = await api.put('/auth/profile', profileData);
-    return response.data;
+    return response.data?.data || {};
   },
 
   // Upload profile photo
@@ -45,7 +45,7 @@ export const authApi = {
     const response = await api.post('/auth/profile/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
-    return response.data;
+    return response.data?.data || {};
   },
 
   // Change password

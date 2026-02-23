@@ -64,8 +64,8 @@ export const defaultAppSettings = {
   },
   documents: {
     invoice: { ...defaultDoc, title: "INVOICE" },
-    quotation: { ...defaultDoc, title: "QUOTATION" },
-    receipt: { ...defaultDoc, title: "RECEIPT" },
+    quotation: { ...defaultDoc, title: "QUOTATION", prefix: "QTN" },
+    receipt: { ...defaultDoc, title: "RECEIPT", prefix: "RCT" },
   },
 };
 

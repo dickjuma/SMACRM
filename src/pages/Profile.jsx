@@ -16,6 +16,9 @@ const Profile = () => {
     email: "",
     phone: "",
     address: "",
+    department: "",
+    position: "",
+    location: "",
     avatar: "",
     status: "offline",
     role: "user"
@@ -28,14 +31,15 @@ const Profile = () => {
   });
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
-    newPassword: ""
+    newPassword: "",
+    confirmPassword: ""
   });
 
   const loadProfile = async () => {
     try {
       setLoading(true);
       const response = await authApi.getProfile();
-      const data = response?.data || {};
+      const data = response || {};
       const tracked = data?.stats?.trackedTime || {};
 
       const nextProfile = {
@@ -43,6 +47,9 @@ const Profile = () => {
         email: data?.email || "",
         phone: data?.phone || "",
         address: data?.address || "",
+        department: data?.department || "",
+        position: data?.position || "",
+        location: data?.location || "",
         avatar: data?.avatar || "",
         status: data?.onlineStatus || "offline",
         role: data?.role || "user"
@@ -61,6 +68,9 @@ const Profile = () => {
           ...user,
           name: data?.name || user?.name,
           phone: data?.phone || user?.phone,
+          department: data?.department || user?.department,
+          position: data?.position || user?.position,
+          location: data?.location || user?.location,
           role: data?.role || user?.role,
           onlineStatus: data?.onlineStatus || user?.onlineStatus,
           avatar: data?.avatar || user?.avatar
@@ -84,15 +94,21 @@ const Profile = () => {
       const payload = {
         name: profile.name,
         phone: profile.phone,
-        address: profile.address
+        address: profile.address,
+        department: profile.department,
+        position: profile.position,
+        location: profile.location
       };
       const response = await authApi.updateProfile(payload);
-      const updated = response?.data || {};
+      const updated = response || {};
       if (updateUser && user) {
         updateUser({
           ...user,
           name: updated?.name || profile.name,
           phone: updated?.phone || profile.phone,
+          department: updated?.department || profile.department,
+          position: updated?.position || profile.position,
+          location: updated?.location || profile.location,
           avatar: updated?.avatar || profile.avatar
         });
       }
@@ -114,11 +130,15 @@ const Profile = () => {
       toast.error("Please choose an image file");
       return;
     }
+    if (Number(file.size || 0) > 5 * 1024 * 1024) {
+      toast.error("Image is too large. Max size is 5MB.");
+      return;
+    }
 
     try {
       setUploadingAvatar(true);
       const response = await authApi.uploadProfileAvatar(file);
-      const updated = response?.data || {};
+      const updated = response || {};
       setProfile((prev) => ({ ...prev, avatar: updated?.avatar || prev.avatar }));
       if (updateUser && user) {
         updateUser({
@@ -140,10 +160,18 @@ const Profile = () => {
       toast.error("Fill current and new password");
       return;
     }
+    if (passwordForm.newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error("New password and confirm password do not match");
+      return;
+    }
     try {
       setPasswordSaving(true);
       await authApi.changePassword(passwordForm);
-      setPasswordForm({ currentPassword: "", newPassword: "" });
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
       toast.success("Password changed successfully");
     } catch (error) {
       toast.error(error?.response?.data?.message || "Failed to change password");
@@ -188,8 +216,9 @@ const Profile = () => {
               disabled={uploadingAvatar}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              {uploadingAvatar ? "Uploading..." : "Upload Photo"}
+              {uploadingAvatar ? "Uploading..." : "Upload Passport Photo"}
             </button>
+            <p className="mt-2 text-xs text-slate-500">JPG/PNG/WebP, max 5MB.</p>
           </div>
         </div>
 
@@ -240,6 +269,30 @@ const Profile = () => {
             <span className="mb-1 block text-slate-600">Role</span>
             <input value={profile.role} disabled className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-slate-500" />
           </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Department</span>
+            <input
+              value={profile.department}
+              onChange={(event) => setProfile((prev) => ({ ...prev, department: event.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Position</span>
+            <input
+              value={profile.position}
+              onChange={(event) => setProfile((prev) => ({ ...prev, position: event.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Location</span>
+            <input
+              value={profile.location}
+              onChange={(event) => setProfile((prev) => ({ ...prev, location: event.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+            />
+          </label>
           <label className="text-sm md:col-span-2">
             <span className="mb-1 block text-slate-600">Address</span>
             <textarea
@@ -276,6 +329,15 @@ const Profile = () => {
               type="password"
               value={passwordForm.newPassword}
               onChange={(event) => setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Confirm New Password</span>
+            <input
+              type="password"
+              value={passwordForm.confirmPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
             />
           </label>

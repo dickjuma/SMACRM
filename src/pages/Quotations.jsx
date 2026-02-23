@@ -211,9 +211,7 @@ const Quotations = () => {
   const { data: appSettings } = useQuery({
     queryKey: ["app-settings"],
     queryFn: fetchAppSettings,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000
   });
 
   // Ensure data is always an array
@@ -250,8 +248,8 @@ const Quotations = () => {
     mutationFn: (id) => quotationApi.deleteQuotation(id),
     onSuccess: () => {
       toast.success("Quotation deleted successfully!");
-      queryClient.invalidateQueries(["quotations"]);
-      queryClient.invalidateQueries(["quotation-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      queryClient.invalidateQueries({ queryKey: ["quotation-stats"] });
     },
     onError: (error) => {
       toast.error(`Delete failed: ${error.message}`);
@@ -275,13 +273,13 @@ const Quotations = () => {
         return quotationApi.createQuotation(payload);
       }
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => {
       toast.success(
-        response.data._id ? "Quotation updated successfully!" : "Quotation created successfully!"
+        variables?._id ? "Quotation updated successfully!" : "Quotation created successfully!"
       );
       
-      queryClient.invalidateQueries(["quotations"]);
-      queryClient.invalidateQueries(["quotation-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      queryClient.invalidateQueries({ queryKey: ["quotation-stats"] });
       
       closeQuotationEditor();
     },
@@ -294,8 +292,8 @@ const Quotations = () => {
     mutationFn: (id) => api.post(`/quotations/${id}/convert-to-invoice`),
     onSuccess: () => {
       toast.success("Quotation converted to invoice successfully!");
-      queryClient.invalidateQueries(["quotations"]);
-      queryClient.invalidateQueries(["quotation-stats"]);
+      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      queryClient.invalidateQueries({ queryKey: ["quotation-stats"] });
     },
     onError: (error) => {
       toast.error(`Conversion failed: ${error.message}`);
@@ -316,8 +314,8 @@ const Quotations = () => {
     mutationFn: (quotationId) => api.post(`/quotations/${quotationId}/duplicate`),
     onSuccess: (response) => {
       toast.success("Quotation duplicated successfully!");
-      queryClient.invalidateQueries(["quotations"]);
-      setEditing(response.data);
+      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      setEditing(response?.data?.data || response?.data);
     },
     onError: (error) => {
       toast.error(`Duplication failed: ${error.message}`);

@@ -42,7 +42,7 @@ const Settings = () => {
   const [resetting, setResetting] = useState(false);
   const [settings, setSettings] = useState(defaultAppSettings);
 
-  const adminOnlyTabs = new Set(["company", "documents", "notifications"]);
+  const adminOnlyTabs = new Set(["company", "documents", "notifications", "security", "integrations"]);
   const visibleTabs = useMemo(
     () => tabs.filter((tab) => (adminOnlyTabs.has(tab.id) ? isAdmin : true)),
     [isAdmin]
@@ -76,6 +76,12 @@ const Settings = () => {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (!visibleTabs.some((tab) => tab.id === activeTab) && visibleTabs[0]) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [activeTab, visibleTabs]);
+
   const updateSection = (section, key, value) => {
     setSettings((prev) => ({
       ...prev,
@@ -99,7 +105,14 @@ const Settings = () => {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      const { data } = await api.put("/settings", settings);
+      const payload = isAdmin
+        ? settings
+        : {
+            appearance: settings.appearance,
+            general: settings.general
+          };
+
+      const { data } = await api.put("/settings", payload);
       const merged = mergeAppSettings(data?.data || {});
       setSettings(merged);
       applyTheme(merged.appearance.theme);
@@ -148,14 +161,16 @@ const Settings = () => {
               </button>
             ))}
           </div>
-          <button
-            onClick={resetSettings}
-            disabled={resetting || loading}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            <RefreshCw size={14} />
-            {resetting ? "Resetting..." : "Reset Defaults"}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={resetSettings}
+              disabled={resetting || loading}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <RefreshCw size={14} />
+              {resetting ? "Resetting..." : "Reset Defaults"}
+            </button>
+          )}
         </aside>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6 dark:border-slate-800 dark:bg-slate-900">

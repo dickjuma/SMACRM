@@ -230,9 +230,7 @@ const Invoices = () => {
   const { data: appSettings } = useQuery({
     queryKey: ["app-settings"],
     queryFn: fetchAppSettings,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000
   });
 
   // Ensure data is always an array
@@ -299,9 +297,9 @@ const Invoices = () => {
         return invoiceApi.createInvoice(payload);
       }
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => {
       toast.success(
-        response.data._id ? "Invoice updated successfully!" : "Invoice created successfully!",
+        variables?._id ? "Invoice updated successfully!" : "Invoice created successfully!",
         {
           duration: 3000,
           icon: '✅',
@@ -453,7 +451,7 @@ const Invoices = () => {
       toast.success("Invoice duplicated successfully!");
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       refetch();
-      setEditing(response.data);
+      setEditing(response?.data?.data || response?.data);
     },
     onError: (error) => {
       const errorMessage = error.response?.data?.message || error.message || "Failed to duplicate invoice";

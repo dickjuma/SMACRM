@@ -19,11 +19,18 @@ import Settings from "./pages/Settings";
 
 function AppContent() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const isLoginPage = location.pathname === "/login";
   const isAdmin = ["admin", "superadmin"].includes(String(user?.role || "").toLowerCase());
+  const isAuthenticated = Boolean(token && user);
+
+  const RequireAuth = ({ children }) => {
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    return children;
+  };
 
   const RequireAdmin = ({ children }) => {
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
     if (!isAdmin) return <Navigate to="/" replace />;
     return children;
   };
@@ -61,17 +68,17 @@ function AppContent() {
 
               <Routes>
                 <Route path="/login" element={<Login />} />
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/clients" element={<Clients />} />
-                <Route path="/quotations" element={<Quotations />} />
-                <Route path="/quotations/new" element={<AddQuotation />} />
-                <Route path="/invoices" element={<Invoices />} />
-                <Route path="/invoices/new" element={<AddInvoice />} />
-                <Route path="/receipts" element={<Receipts />} />
-                <Route path="/profile" element={<Profile />} />
+                <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+                <Route path="/clients" element={<RequireAuth><Clients /></RequireAuth>} />
+                <Route path="/quotations" element={<RequireAuth><Quotations /></RequireAuth>} />
+                <Route path="/quotations/new" element={<RequireAuth><AddQuotation /></RequireAuth>} />
+                <Route path="/invoices" element={<RequireAuth><Invoices /></RequireAuth>} />
+                <Route path="/invoices/new" element={<RequireAuth><AddInvoice /></RequireAuth>} />
+                <Route path="/receipts" element={<RequireAuth><Receipts /></RequireAuth>} />
+                <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
                 <Route path="/fincomm" element={<RequireAdmin><EmailComposer /></RequireAdmin>} />
                 <Route path="/useradmin" element={<RequireAdmin><UserAdmin /></RequireAdmin>} />
-                <Route path="/settings" element={<Settings />} />
+                <Route path="/settings" element={<RequireAdmin><Settings /></RequireAdmin>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </div>

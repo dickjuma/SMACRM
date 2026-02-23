@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast, { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import {
@@ -78,6 +78,8 @@ const api = axios.create({
     'Content-Type': 'application/json'
   }
 });
+
+const extractPayload = (response) => response?.data ?? response ?? {};
 
 // Email API calls
 const emailApi = {
@@ -255,7 +257,7 @@ const StatisticsPanel = ({ data }) => {
     queryFn: async () => {
       try {
         const response = await emailApi.getEmailStats('30d');
-        return response.data || response;
+        return extractPayload(response);
       } catch (err) {
         console.error('Failed to fetch email stats:', err);
         return {
@@ -485,7 +487,8 @@ const EmailHistory = () => {
     queryFn: async () => {
       try {
         const response = await emailApi.getEmailHistory({ filter });
-        return response.data?.emails || response.emails || [];
+        const payload = extractPayload(response);
+        return payload?.emails || [];
       } catch (error) {
         console.error('Failed to fetch email history:', error);
         return [];
@@ -616,7 +619,8 @@ const EmailSignatureComponent = ({ onApplySignature }) => {
     try {
       setIsLoading(true);
       const response = await emailApi.getSignatures();
-      setSignatures(response.data || []);
+      const payload = extractPayload(response);
+      setSignatures(Array.isArray(payload) ? payload : []);
     } catch (error) {
       console.error('Failed to load signatures:', error);
       // Mock signatures
@@ -743,7 +747,7 @@ const EmailComposerContent = () => {
     queryFn: async () => {
       try {
         const response = await emailApi.getRegistry();
-        const data = response.data || response;
+        const data = extractPayload(response);
         console.log('Registry data received:', data);
         
         const enhanceDocuments = (docs, type) => {
@@ -919,10 +923,11 @@ const EmailComposerContent = () => {
       };
       
       const response = await emailApi.applyTemplate(templateData);
+      const payload = extractPayload(response);
       
-      if (response.data) {
-        setSubject(response.data.subject || TEMPLATES[tempKey].subject(type, doc?.formattedNumber || "000001", doc?.client?.name || "Valued Client"));
-        setMessage(response.data.body || TEMPLATES[tempKey].body(type, doc?.client?.name || "Valued Client", doc?.formattedNumber || "000001"));
+      if (payload) {
+        setSubject(payload.subject || TEMPLATES[tempKey].subject(type, doc?.formattedNumber || "000001", doc?.client?.name || "Valued Client"));
+        setMessage(payload.body || payload.message || TEMPLATES[tempKey].body(type, doc?.client?.name || "Valued Client", doc?.formattedNumber || "000001"));
         setActiveTemplate(tempKey);
         toast.success(`"${TEMPLATES[tempKey].label}" template applied!`, { icon: '📧', duration: 2000 });
       }
@@ -1178,10 +1183,26 @@ const EmailComposerContent = () => {
     toast.success("All fields cleared", { icon: '🧹', duration: 2000 });
   };
 
-  const handleSaveDraft = () => {
-    const draft = { subject, message, timestamp: new Date().toISOString() };
-    localStorage.setItem('draft_saved_' + Date.now(), JSON.stringify(draft));
-    toast.success("Draft saved successfully!", { icon: '💾', duration: 2000 });
+  const handleSaveDraft = async () => {
+    try {
+      await emailApi.saveDraft({
+        mode,
+        type: activeTab.endsWith('s') ? activeTab.slice(0, -1) : activeTab,
+        docId: selectedDoc?._id,
+        subject,
+        message,
+        recipients: mode === "bulk"
+          ? selectedClients
+          : [selectedDoc?.client?.email || selectedDoc?.clientDetails?.email || selectedDoc?.email].filter(Boolean),
+        cc: ccRecipients,
+        bcc: bccRecipients
+      });
+      toast.success("Draft saved successfully!", { duration: 2000 });
+    } catch (error) {
+      const draft = { subject, message, timestamp: new Date().toISOString() };
+      localStorage.setItem('draft_saved_' + Date.now(), JSON.stringify(draft));
+      toast.success("Draft saved locally.", { duration: 2000 });
+    }
   };
 
   const handleFileUpload = (e) => {
@@ -1775,23 +1796,4 @@ const EmailComposerContent = () => {
   );
 };
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 5 * 60 * 1000,
-    },
-    mutations: {
-      retry: 1,
-    }
-  },
-});
-
-const EmailComposer = () => (
-  <QueryClientProvider client={queryClient}>
-    <EmailComposerContent />
-  </QueryClientProvider>
-);
-
-export default EmailComposer;
+export default EmailComposerContent;
