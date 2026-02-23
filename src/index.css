@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* THE ERP STACKING ARCHITECTURE */
+/* ============================================
+   THE ERP STACKING ARCHITECTURE
+   ============================================ */
 :root {
   --layer-content: 1;
   --layer-sticky: 40;
@@ -10,6 +12,13 @@
   --layer-backdrop: 140;
   --layer-sidebar: 150;
   --layer-toggle: 1000;
+  
+  /* Responsive spacing tokens */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
 }
 
 /* Force page content to stay below navigation */
@@ -23,12 +32,147 @@ thead, th, .sticky, [style*="position: sticky"] {
   z-index: var(--layer-sticky) !important;
 }
 
-/* Custom scrollbar for that clean Enterprise look */
+/* ============================================
+   CUSTOM SCROLLBAR
+   ============================================ */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Mobile-first guardrails for dense enterprise tables and dialogs */
+/* Custom scrollbar for that clean Enterprise look */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ============================================
+   RESPONSIVE UTILITIES
+   ============================================ */
+
+/* Hide on specific breakpoints */
+.hide-on-mobile {
+  @media (max-width: 767px) {
+    display: none !important;
+  }
+}
+
+.hide-on-tablet {
+  @media (min-width: 768px) and (max-width: 1023px) {
+    display: none !important;
+  }
+}
+
+.hide-on-desktop {
+  @media (min-width: 1024px) {
+    display: none !important;
+  }
+}
+
+.show-only-mobile {
+  @media (min-width: 768px) {
+    display: none !important;
+  }
+}
+
+.show-only-tablet {
+  @media (max-width: 767px), (min-width: 1024px) {
+    display: none !important;
+  }
+}
+
+.show-only-desktop {
+  @media (max-width: 1023px) {
+    display: none !important;
+  }
+}
+
+/* Responsive text utilities */
+.text-responsive-xs {
+  @apply text-xs;
+}
+
+.text-responsive-sm {
+  @apply text-sm;
+}
+
+.text-responsive-base {
+  @apply text-base;
+}
+
+.text-responsive-lg {
+  @apply text-lg;
+}
+
+.text-responsive-xl {
+  @apply text-xl;
+}
+
 @media (max-width: 767px) {
+  .text-responsive-xs { @apply text-2xs; }
+  .text-responsive-sm { @apply text-xs; }
+  .text-responsive-base { @apply text-sm; }
+  .text-responsive-lg { @apply text-base; }
+  .text-responsive-xl { @apply text-lg; }
+}
+
+/* Responsive padding utilities */
+.p-responsive {
+  @apply p-3 md:p-4 lg:p-6;
+}
+
+.px-responsive {
+  @apply px-3 md:px-4 lg:px-6;
+}
+
+.py-responsive {
+  @apply py-3 md:py-4 lg:py-6;
+}
+
+/* Responsive margin utilities */
+.m-responsive {
+  @apply m-3 md:m-4 lg:m-6;
+}
+
+.mx-responsive {
+  @apply mx-3 md:mx-4 lg:mx-6;
+}
+
+.my-responsive {
+  @apply my-3 md:my-4 lg:my-6;
+}
+
+/* ============================================
+   MOBILE-FIRST RESPONSIVE STYLES
+   ============================================ */
+
+@media (max-width: 767px) {
+  /* Mobile-friendly table styles */
+  .overflow-x-auto > table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
   .overflow-x-auto > table th,
   .overflow-x-auto > table td {
     white-space: nowrap;
@@ -36,9 +180,250 @@ thead, th, .sticky, [style*="position: sticky"] {
     padding-right: 0.75rem !important;
   }
 
+  /* Mobile dialog */
   .mobile-dialog {
     width: calc(100vw - 1rem) !important;
     max-width: calc(100vw - 1rem) !important;
     max-height: calc(100dvh - 1rem) !important;
+  }
+
+  /* Mobile-friendly buttons */
+  button, 
+  .btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  /* Mobile-friendly inputs */
+  input, 
+  select, 
+  textarea {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  /* Mobile card adjustments */
+  .card {
+    margin-left: -0.5rem;
+    margin-right: -0.5rem;
+    border-radius: 0;
+  }
+  
+  /* Hide non-essential elements on mobile */
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  /* Touch-friendly spacing */
+  .touch-spacing > * + * {
+    margin-top: 0.75rem;
+  }
+}
+
+/* ============================================
+   TABLET RESPONSIVE STYLES
+   ============================================ */
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Tablet-specific adjustments */
+  .tablet-responsive {
+    font-size: 0.9375rem;
+  }
+  
+  .tablet-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================
+   DESKTOP RESPONSIVE STYLES  
+   ============================================ */
+
+@media (min-width: 1024px) {
+  .desktop-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* ============================================
+   RESPONSIVE GRID SYSTEM
+   ============================================ */
+
+.grid-responsive {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-responsive {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .grid-responsive {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ============================================
+   RESPONSIVE FLEX UTILITIES
+   ============================================ */
+
+.flex-col-mobile {
+  @apply flex flex-col;
+}
+
+@media (min-width: 768px) {
+  .flex-col-mobile {
+    @apply flex-row;
+  }
+}
+
+.flex-center-mobile {
+  @apply flex items-center justify-center;
+}
+
+@media (max-width: 767px) {
+  .flex-center-mobile {
+    @apply items-start justify-start;
+  }
+}
+
+/* ============================================
+   RESPONSIVE VISIBILITY
+   ============================================ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.not-sr-only {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ============================================
+   RESPONSIVE OVERFLOW
+   ============================================ */
+
+.overflow-responsive {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@media (min-width: 1024px) {
+  .overflow-responsive {
+    overflow-x: visible;
+    overflow-y: visible;
+  }
+}
+
+/* ============================================
+   SAFE AREA INSETS (For notched devices)
+   ============================================ */
+
+@supports (padding: max(0px)) {
+  .safe-area-inset-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+  
+  .safe-area-inset-right {
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+  }
+  
+  .safe-area-inset-left {
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+  }
+}
+
+/* ============================================
+   PREFERS REDUCED MOTION
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background: white;
+    color: black;
+  }
+  
+  .print-full-width {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* ============================================
+   DARK MODE ENHANCEMENTS
+   ============================================ */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: ease-out;
+  transition-duration: 150ms;
+}
+
+/* Exclude animations from transitions */
+@apply .no-transition;
+* {
+  transition-property: none;
+}
+@apply .transition-all;
+
+/* ============================================
+   CONTAINER QUERY SUPPORT (Future proofing)
+   ============================================ */
+
+@supports (container-type: inline-size) {
+  .container-query {
+    container-type: inline-size;
   }
 }

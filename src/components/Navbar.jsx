@@ -228,21 +228,22 @@ const Navbar = () => {
 
   return (
     <header className="sticky top-0 z-[90] border-b border-slate-200 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-[#0F172A]/95">
-      <div className="mx-auto flex w-full max-w-[1800px] flex-wrap items-center gap-2 py-2 pl-14 pr-3 sm:gap-3 sm:px-4 md:h-16 md:flex-nowrap md:py-0 md:px-6">
+      <div className="mx-auto flex w-full max-w-[1800px] flex-wrap items-center gap-2 py-2 pl-14 pr-2 sm:pl-14 sm:pr-3 md:gap-3 md:py-0 md:pl-14 lg:px-6">
         <button
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 sm:px-2"
+          className="flex items-center gap-1.5 sm:gap-2 rounded-lg px-1.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 sm:px-2"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
             <Shield size={16} />
           </div>
           <div className="text-left">
             <p className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white sm:text-sm">SMA Core</p>
+            <p className="hidden text-[10px] uppercase tracking-[0.14em] text-slate-500 xs:block sm:hidden">SMA</p>
             <p className="hidden text-[10px] uppercase tracking-[0.14em] text-slate-500 sm:block">Enterprise Console</p>
           </div>
         </button>
 
-        <form onSubmit={handleSearchSubmit} className="ml-auto hidden max-w-md flex-1 md:block">
+        <form onSubmit={handleSearchSubmit} className="ml-auto hidden max-w-md flex-1 lg:block">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -254,7 +255,7 @@ const Navbar = () => {
           </div>
         </form>
 
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2">
         <button
           onClick={() => setIsDarkMode((prev) => !prev)}
           className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -358,24 +359,24 @@ const Navbar = () => {
                 return next;
               });
             }}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg border border-slate-200 px-1.5 py-1.5 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800 sm:px-2"
           >
             {resolveAvatarUrl(user?.avatar) ? (
               <img
                 src={resolveAvatarUrl(user?.avatar)}
                 alt={user?.name || "Profile"}
-                className="h-8 w-8 rounded-lg object-cover"
+                className="h-7 w-7 rounded-lg object-cover sm:h-8 sm:w-8"
               />
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white dark:bg-slate-700">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white dark:bg-slate-700 sm:h-8 sm:w-8">
                 {getInitials(user?.name)}
               </div>
             )}
-            <div className="hidden text-left sm:block">
+            <div className="hidden text-left lg:block">
               <p className="text-xs font-semibold text-slate-900 dark:text-white">{user?.name || "User"}</p>
               <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{user?.role || "Account"}</p>
             </div>
-            <ChevronDown size={14} className="hidden text-slate-500 sm:block" />
+            <ChevronDown size={14} className="hidden text-slate-500 lg:block" />
           </button>
 
           {profileOpen && (

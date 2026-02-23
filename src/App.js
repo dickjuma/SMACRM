@@ -23,6 +23,8 @@ function AppContent() {
   const isLoginPage = location.pathname === "/login";
   const isAdmin = ["admin", "superadmin"].includes(String(user?.role || "").toLowerCase());
   const isAuthenticated = Boolean(token && user);
+  const moduleRoutes = new Set(["/", "/clients", "/quotations", "/invoices", "/receipts", "/fincomm", "/useradmin"]);
+  const isModulePage = moduleRoutes.has(location.pathname);
 
   const RequireAuth = ({ children }) => {
     if (!isAuthenticated) return <Navigate to="/login" replace />;
@@ -52,15 +54,15 @@ function AppContent() {
           ${isLoginPage ? "w-full" : "transition-all duration-300 ease-in-out"}
         `}>
           
-          <div className={`${isLoginPage ? "" : "px-3 py-4 sm:px-4 md:p-8 lg:p-10"}`}>
-            <div className={isLoginPage ? "" : "max-w-[1600px] mx-auto w-full"}>
-              
-              {!isLoginPage && (
-                <div className="mb-5 animate-in fade-in slide-in-from-top-4 duration-500 md:mb-6">
-                  <h1 className="text-lg font-bold tracking-tight capitalize sm:text-xl">
+          <div className={`${isLoginPage ? "" : isModulePage ? "" : "px-2 py-3 sm:px-3 sm:py-4 md:px-4 md:py-5 lg:px-6 lg:py-6 xl:p-8"}`}>
+            <div className={isLoginPage ? "" : isModulePage ? "w-full" : "max-w-[1600px] mx-auto w-full"}>
+               
+              {!isLoginPage && !isModulePage && (
+                <div className="mb-4 sm:mb-5 animate-in fade-in slide-in-from-top-4 duration-500">
+                  <h1 className="text-base sm:text-lg md:text-xl font-bold tracking-tight capitalize">
                     {location.pathname.split('/')[1] || 'Overview'}
                   </h1>
-                  <p className="hidden text-xs font-medium text-slate-500 sm:block">
+                  <p className="hidden text-xs font-medium text-slate-500 sm:block md:text-sm">
                     Enterprise Resource Management / {location.pathname === "/" ? "Dashboard" : location.pathname.substring(1)}
                   </p>
                 </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast, { Toaster } from 'react-hot-toast';
-import axios from 'axios';
+import api, { API_BASE_URL } from "../services/http";
 import {
   Send, Mail, Check, Paperclip, Briefcase, Loader2,
   AlertCircle, Menu, LayoutGrid, X, RefreshCw, Shield, Zap,
@@ -70,15 +70,6 @@ import {
 // API CONFIGURATION
 // ============================
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
-
 const extractPayload = (response) => response?.data ?? response ?? {};
 
 // Email API calls
@@ -118,48 +109,6 @@ const emailApi = {
   getTrackingPixel: (trackingId) => `${API_BASE_URL}/email/track/open/${trackingId}`,
   getTrackingLink: (trackingId, url) => `${API_BASE_URL}/email/track/click/${trackingId}?url=${encodeURIComponent(url)}`
 };
-
-// Interceptors
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-api.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('sessionId');
-      toast.error('Session expired. Please login again.');
-      window.location.href = '/login';
-    } else if (error.response?.status === 403) {
-      toast.error('You do not have permission to perform this action.');
-    } else if (error.response?.status === 404) {
-      toast.error('Resource not found.');
-    } else if (error.response?.status === 422) {
-      const errors = error.response.data?.errors;
-      if (errors && Array.isArray(errors)) {
-        errors.forEach(err => toast.error(err.msg || 'Validation error'));
-      } else {
-        toast.error('Validation error');
-      }
-    } else if (error.response?.status === 500) {
-      toast.error('Server error. Please try again later.');
-    } else if (error.message === 'Network Error') {
-      toast.error('Network error. Please check your connection.');
-    }
-    return Promise.reject(error);
-  }
-);
 
 // ============================
 // EMAIL TEMPLATES

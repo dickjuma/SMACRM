@@ -117,29 +117,30 @@ const Sidebar = () => {
             return next;
           })
         }
-        className="fixed left-3 top-3 z-[200] inline-flex items-center justify-center rounded-lg bg-indigo-600 p-2.5 text-white shadow-xl ring-1 ring-indigo-500/40 transition-transform active:scale-95 md:hidden"
+        className="fixed left-2 sm:left-3 top-3 z-[200] inline-flex items-center justify-center rounded-lg bg-indigo-600 p-2 text-white shadow-xl ring-1 ring-indigo-500/40 transition-transform active:scale-95 md:hidden"
         aria-label={open ? "Close menu" : "Open menu"}
         aria-controls="app-mobile-sidebar"
         aria-expanded={open}
       >
-        {open ? <X size={16} /> : <Menu size={16} />}
+        {open ? <X size={18} /> : <Menu size={18} />}
       </button>
 
       <aside
         id="app-mobile-sidebar"
-        className={`fixed left-0 top-16 z-[80] flex h-[calc(100dvh-4rem)] flex-col border-r border-slate-200 bg-white transition-all duration-300 dark:border-slate-800 dark:bg-[#0B1120] md:sticky md:top-16 md:h-[calc(100vh-4rem)] ${
+        className={`fixed left-0 top-16 z-[80] flex h-[calc(100dvh-4rem)] flex-col border-r border-slate-200 bg-white transition-all duration-300 ease-out dark:border-slate-800 dark:bg-[#0B1120] md:sticky md:top-16 md:h-[calc(100vh-4rem)] ${
           isMobile
             ? open
-              ? "w-[88vw] max-w-[340px] translate-x-0 shadow-2xl"
-              : "w-[88vw] max-w-[340px] -translate-x-full pointer-events-none"
+              ? "w-[85vw] max-w-[320px] translate-x-0 shadow-2xl"
+              : "w-[85vw] max-w-[320px] -translate-x-full pointer-events-none"
             : open
               ? "w-64 max-w-none"
               : "w-20 max-w-none"
         }`}
       >
-        <div className="flex h-14 items-center border-b border-slate-200 px-4 dark:border-slate-800 md:h-16">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-md bg-indigo-600 text-white ${open ? "" : "mx-auto"}`}>
-            <Shield size={16} />
+        <div className="flex h-14 items-center border-b border-slate-200 px-3 sm:px-4 dark:border-slate-800 md:h-16">
+          <div className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md bg-indigo-600 text-white ${open ? "" : "mx-auto"}`}>
+            <Shield size={16} className="sm:hidden" />
+            <Shield size={18} className="hidden sm:block" />
           </div>
         </div>
 
@@ -151,7 +152,7 @@ const Sidebar = () => {
                   {group.title}
                 </p>
               )}
-              <div className="space-y-1">
+              <div className="space-y-0.5 sm:space-y-1">
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.link;
                   const Icon = item.icon;
@@ -160,7 +161,7 @@ const Sidebar = () => {
                     <Link
                       key={item.link}
                       to={item.link}
-                      className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                      className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 sm:py-2.5 text-sm transition-colors ${
                         isActive
                           ? "bg-indigo-600 text-white"
                           : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -170,8 +171,8 @@ const Sidebar = () => {
                         if (isMobile) setOpen(false);
                       }}
                     >
-                      <Icon size={18} />
-                      {open && <span className="font-medium">{item.label}</span>}
+                      <Icon size={18} className="flex-shrink-0" />
+                      {open && <span className="truncate font-medium">{item.label}</span>}
                     </Link>
                   );
                 })}

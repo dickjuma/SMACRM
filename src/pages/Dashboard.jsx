@@ -204,36 +204,36 @@ const Dashboard = () => {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-4 px-3 pt-4 sm:space-y-6 sm:px-4 sm:pt-6 md:px-8">
-        <section className="rounded-2xl border border-slate-200 bg-white p-2.5 sm:border-0 sm:bg-transparent sm:p-0">
+      <main className="mx-auto max-w-7xl space-y-4 px-2 pt-4 sm:space-y-6 sm:px-3 sm:pt-6 md:px-6 lg:px-8">
+        <section className="rounded-2xl border border-slate-200 bg-white p-2 sm:border-0 sm:bg-transparent sm:p-0">
           <div className="mb-2 flex items-center justify-between px-1 sm:mb-3 sm:px-0">
             <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 sm:text-sm">Executive Snapshot</h2>
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Live</span>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-6">
           {kpiCards.map((card) => (
             <Link
               key={card.id}
               to={card.link}
-              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:rounded-2xl sm:p-5 sm:hover:shadow-xl"
+              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:rounded-2xl sm:p-4 lg:p-5 sm:hover:shadow-xl"
             >
               <div className={`absolute left-0 top-0 h-full w-0.5 sm:w-1 ${card.accent}`} />
               <div className="flex items-start justify-between pl-1 sm:pl-2">
                 <div className={`rounded-lg border p-1.5 ${card.tone} sm:rounded-xl sm:px-3 sm:py-2`}>
-                  {React.cloneElement(card.icon, { className: "h-3.5 w-3.5 sm:h-5 sm:w-5" })}
+                  {React.cloneElement(card.icon, { className: "h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5" })}
                 </div>
-                <ArrowUpRight className="hidden h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-700 sm:block" />
+                <ArrowUpRight className="hidden h-3 w-3 text-slate-300 transition-colors group-hover:text-slate-700 sm:block sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 pl-1 text-[9px] font-black uppercase tracking-[0.08em] text-slate-500 sm:mt-4 sm:pl-2 sm:text-[10px] sm:tracking-[0.16em] sm:text-slate-400">{card.label}</p>
-              <p className="mt-0.5 pl-1 text-sm font-black tracking-tight text-slate-900 sm:mt-1 sm:pl-2 sm:text-3xl">{isLoading ? "..." : card.value}</p>
-              <p className="mt-1 hidden pl-2 text-xs font-medium text-slate-500 sm:block">{isLoading ? "Loading insights..." : card.meta}</p>
+              <p className="mt-1.5 pl-1 text-[9px] font-black uppercase tracking-[0.08em] text-slate-500 sm:mt-3 sm:pl-2 sm:text-[10px] sm:tracking-[0.16em] sm:text-slate-400 lg:mt-4">{card.label}</p>
+              <p className="mt-0.5 pl-1 text-sm font-black tracking-tight text-slate-900 sm:mt-1 sm:pl-2 sm:text-xl md:text-2xl lg:text-3xl">{isLoading ? "..." : card.value}</p>
+              <p className="mt-0.5 hidden pl-1 text-[9px] font-medium text-slate-500 sm:block sm:mt-1 sm:pl-2 sm:text-xs lg:text-sm">{isLoading ? "Loading insights..." : card.meta}</p>
             </Link>
           ))}
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 md:p-7 xl:col-span-2">
+        <section className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 md:p-6 lg:p-7 lg:col-span-2">
             <div className="mb-5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-indigo-500" />
@@ -261,7 +261,7 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 md:p-6">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 md:p-6">
             <div className="mb-4 flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-emerald-600" />
               <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Overall Distribution</h3>
@@ -288,8 +288,8 @@ const Dashboard = () => {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
+        <section className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 lg:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Financial Composition</h4>
               <select

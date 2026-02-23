@@ -5,7 +5,7 @@ const RAW_BASE_URL =
   process.env.REACT_APP_BACKEND_URL ||
   "http://localhost:5000/api";
 
-const API_BASE_URL = RAW_BASE_URL.replace(/\/+$/, "");
+export const API_BASE_URL = RAW_BASE_URL.replace(/\/+$/, "");
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
