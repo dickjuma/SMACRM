@@ -222,6 +222,7 @@ const Profile = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* Sticky quick menu – improved touch targets for mobile */}
       <div className="sticky top-16 z-20 -mx-1 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm backdrop-blur sm:hidden">
         <div className="flex w-max items-center gap-2">
           {quickMenuItems.map((item) => {
@@ -231,13 +232,13 @@ const Profile = () => {
               <button
                 key={item.link}
                 onClick={() => navigate(item.link)}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
                   isActive
                     ? "bg-indigo-600 text-white"
                     : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                 }`}
               >
-                <Icon size={14} />
+                <Icon size={16} />
                 <span>{item.label}</span>
               </button>
             );
@@ -245,7 +246,8 @@ const Profile = () => {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+      {/* Profile header – added scroll margin to avoid being hidden under sticky menu */}
+      <div className="scroll-mt-20 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <h2 className="text-lg font-bold text-slate-900">My Profile</h2>
         <p className="mt-1 text-sm text-slate-500">Manage your account details and track your own time.</p>
 
@@ -301,6 +303,7 @@ const Profile = () => {
         </div>
       </div>
 
+      {/* Edit details form – inputs use text-base to prevent zoom on mobile */}
       <form onSubmit={handleSaveProfile} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-bold text-slate-900">Edit Details</h3>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -309,31 +312,39 @@ const Profile = () => {
             <input
               value={profile.name}
               onChange={(event) => setProfile((prev) => ({ ...prev, name: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Email</span>
-            <input value={profile.email} disabled className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-slate-500" />
+            <input
+              value={profile.email}
+              disabled
+              className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-base text-slate-500"
+            />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Phone</span>
             <input
               value={profile.phone}
               onChange={(event) => setProfile((prev) => ({ ...prev, phone: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Role</span>
-            <input value={profile.role} disabled className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-slate-500" />
+            <input
+              value={profile.role}
+              disabled
+              className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-base text-slate-500"
+            />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Department</span>
             <input
               value={profile.department}
               onChange={(event) => setProfile((prev) => ({ ...prev, department: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm">
@@ -341,7 +352,7 @@ const Profile = () => {
             <input
               value={profile.position}
               onChange={(event) => setProfile((prev) => ({ ...prev, position: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm">
@@ -349,7 +360,7 @@ const Profile = () => {
             <input
               value={profile.location}
               onChange={(event) => setProfile((prev) => ({ ...prev, location: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm md:col-span-2">
@@ -358,7 +369,7 @@ const Profile = () => {
               value={profile.address}
               onChange={(event) => setProfile((prev) => ({ ...prev, address: event.target.value }))}
               rows={3}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
         </div>
@@ -370,6 +381,7 @@ const Profile = () => {
         </button>
       </form>
 
+      {/* Change password form – inputs also use text-base */}
       <form onSubmit={handleChangePassword} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-bold text-slate-900">Change Password</h3>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -379,7 +391,7 @@ const Profile = () => {
               type="password"
               value={passwordForm.currentPassword}
               onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm">
@@ -388,7 +400,7 @@ const Profile = () => {
               type="password"
               value={passwordForm.newPassword}
               onChange={(event) => setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
           <label className="text-sm">
@@ -397,7 +409,7 @@ const Profile = () => {
               type="password"
               value={passwordForm.confirmPassword}
               onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500"
             />
           </label>
         </div>

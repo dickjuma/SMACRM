@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../services/http";
 import socketService from "../services/socket";
@@ -25,7 +26,8 @@ import {
   Phone, MapPin, Star,
   Award, Shield,
   Settings, Key,
-  Building2
+  Building2,
+  ClipboardList
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { formatDistanceToNow, format } from "date-fns";
@@ -43,6 +45,7 @@ const normalizeStats = (raw) => ({
 
 const UserAdmin = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [newUser, setNewUser] = useState({ 
     name: "", 
     email: "", 
@@ -373,11 +376,6 @@ const UserAdmin = () => {
     const confirmed = window.confirm(`Reset password for ${user?.name || "this user"} and send by email?`);
     if (!confirmed) return;
     resetPasswordMutation.mutate(user._id);
-  };
-
-  const handleViewActivity = (user) => {
-    setSelectedUser(user);
-    setShowActivityModal(true);
   };
 
   const handleViewProfile = (user) => {
@@ -944,7 +942,8 @@ const UserAdmin = () => {
             </div>
           </div>
         </div>
-{/* Quick Stats and Filters */}
+
+        {/* Quick Stats and Filters */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:items-center lg:gap-6">
@@ -1098,7 +1097,8 @@ const UserAdmin = () => {
           </div>
         )}
 
-                {showCreateModal && (
+        {/* Create User Modal */}
+        {showCreateModal && (
           <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90dvh] overflow-hidden shadow-2xl">
               <div className="px-4 py-4 sm:px-6 border-b border-gray-200 flex items-center justify-between">
@@ -1163,98 +1163,264 @@ const UserAdmin = () => {
           </div>
         )}
 
-        {/* DATA TABLE */}
+        {/* DATA TABLE - DESKTOP VIEW */}
         <section className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+          {/* Mobile Card View - Enhanced */}
           <div className="grid gap-3 p-3 md:hidden">
             {users.map((u) => {
               const liveStatus = deriveOnlineStatus(u);
+              const isEditing = editingId === u._id;
               return (
-                <article key={u._id} className={`rounded-lg border p-3 shadow-sm ${!u.isActive ? "opacity-70" : ""}`}>
-                  <div className="mb-3 flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                <article
+                  key={u._id}
+                  className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${
+                    !u.isActive ? "opacity-75" : ""
+                  }`}
+                >
+                  {/* Header with checkbox, avatar, name, and role */}
+                  <div className="mb-3 flex items-start justify-between">
+                    <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
                         checked={selectedUsers.includes(u._id)}
                         onChange={() => handleSelectUser(u._id)}
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                       <div className="relative">
                         {resolveAvatarUrl(u.avatar) ? (
                           <img
                             src={resolveAvatarUrl(u.avatar)}
                             alt={u.name || "User"}
-                            className="h-9 w-9 rounded-full border border-gray-200 object-cover"
+                            className="h-12 w-12 rounded-full border-2 border-gray-100 object-cover"
                           />
                         ) : (
-                          <div className="h-9 w-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-base font-bold text-white">
                             {getInitials(u.name)}
                           </div>
                         )}
-                        <div className={`absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${getStatusColor(liveStatus)}`}></div>
+                        <div
+                          className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white ${
+                            getStatusColor(liveStatus)
+                          }`}
+                        />
                       </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-900">{u.name}</p>
-                        <p className="truncate text-xs text-gray-500">{u.email}</p>
+                      <div>
+                        <p className="font-semibold text-gray-900">{u.name}</p>
+                        <p className="text-xs text-gray-500">{u.email}</p>
+                        {u.performance >= 90 && (
+                          <div className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-600">
+                            <Star size={12} className="fill-amber-500" />
+                            Top Performer
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium ${getRoleColor(u.role)}`}>
-                      {u.role?.replace('_', ' ')}
+                    <span
+                      className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                        getRoleColor(u.role)
+                      }`}
+                    >
+                      {u.role?.replace("_", " ")}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                    <div className="rounded bg-gray-50 p-2">
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Department</p>
-                      <p className="truncate font-medium text-gray-800">{u.department || "Unassigned"}</p>
+                  {/* Role & Department – inline editable */}
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Department</p>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editDepartment}
+                          onChange={(e) => setEditDepartment(e.target.value)}
+                          className="mt-1 w-full rounded border border-blue-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                        />
+                      ) : (
+                        <p className="font-medium text-gray-800">
+                          {u.department || "Unassigned"}
+                        </p>
+                      )}
                     </div>
-                    <div className="rounded bg-gray-50 p-2">
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Status</p>
-                      <p className="font-medium capitalize text-gray-800">{liveStatus || "offline"}</p>
-                    </div>
-                    <div className="rounded bg-gray-50 p-2">
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Performance</p>
-                      <p className={`font-semibold ${getPerformanceColor(u.performance)}`}>{u.performance || 0}%</p>
-                    </div>
-                    <div className="rounded bg-gray-50 p-2">
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Last Seen</p>
-                      <p className="truncate font-medium text-gray-800">{formatLastSeen(u)}</p>
+                    <div>
+                      <p className="text-xs text-gray-500">Role</p>
+                      {isEditing ? (
+                        <select
+                          value={editRole}
+                          onChange={(e) => setEditRole(e.target.value)}
+                          className="mt-1 w-full rounded border border-blue-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                        >
+                          <option value="user">User</option>
+                          <option value="team_lead">Team Lead</option>
+                          <option value="manager">Manager</option>
+                          <option value="admin">Admin</option>
+                          <option value="superadmin">Super Admin</option>
+                        </select>
+                      ) : (
+                        <p className="font-medium text-gray-800">
+                          {u.role?.replace("_", " ")}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
-                    <button onClick={() => handleViewProfile(u)} className="rounded bg-slate-100 p-2 text-slate-600" title="View Profile">
-                      <Eye size={14} className="mx-auto" />
-                    </button>
-                    <button onClick={() => handleViewActivity(u)} className="rounded bg-slate-100 p-2 text-slate-600" title="View Activity">
-                      <Activity size={14} className="mx-auto" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingId(u._id);
-                        setEditRole(u.role);
-                        setEditDepartment(u.department);
-                      }}
-                      className="rounded bg-emerald-50 p-2 text-emerald-700"
-                      title="Edit User"
-                    >
-                      <Edit2 size={14} className="mx-auto" />
-                    </button>
-                    <button
-                      onClick={() => handleStatusToggle(u)}
-                      className={`rounded p-2 ${u.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}
-                      title={u.isActive ? "Deactivate User" : "Activate User"}
-                    >
-                      {u.isActive ? <Power size={14} className="mx-auto" /> : <PowerOff size={14} className="mx-auto" />}
-                    </button>
-                    <button onClick={() => handleResetPassword(u)} className="rounded bg-amber-50 p-2 text-amber-700" title="Reset Password">
-                      <Key size={14} className="mx-auto" />
-                    </button>
+                  {/* Status & Performance */}
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Status</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            getStatusColor(liveStatus)
+                          }`}
+                        />
+                        <span className="capitalize text-gray-700">
+                          {liveStatus}
+                        </span>
+                        {!u.isActive && (
+                          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700">
+                            Inactive
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Last seen: {formatLastSeen(u)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Performance</p>
+                      <div className="mt-1 flex items-center justify-between">
+                        <span
+                          className={`text-sm font-semibold ${
+                            getPerformanceColor(u.performance)
+                          }`}
+                        >
+                          {u.performance || 0}%
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Logins: {u.loginCount || 0}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                        <div
+                          className={`h-full ${
+                            (u.performance || 0) >= 90
+                              ? "bg-green-500"
+                              : (u.performance || 0) >= 80
+                              ? "bg-blue-500"
+                              : (u.performance || 0) >= 70
+                              ? "bg-yellow-500"
+                              : "bg-red-500"
+                          }`}
+                          style={{ width: `${u.performance || 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+                    {isEditing ? (
+                      <div className="flex w-full items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleUpdateUser(u._id)}
+                          className="flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
+                        >
+                          <Save size={14} />
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          <X size={14} />
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex w-full flex-wrap items-center justify-between">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleViewProfile(u)}
+                            className="rounded-lg bg-slate-100 p-2 text-slate-600 transition-colors hover:bg-slate-200"
+                            title="View Profile"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <Link
+                            to={`/system-logs?search=${encodeURIComponent(u.name)}`}
+                            className="inline-block rounded-lg bg-slate-100 p-2 text-slate-600 transition-colors hover:bg-slate-200"
+                            title="View Activity Logs"
+                          >
+                            <Activity size={16} />
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setEditingId(u._id);
+                              setEditRole(u.role);
+                              setEditDepartment(u.department);
+                            }}
+                            className="rounded-lg bg-emerald-50 p-2 text-emerald-700 transition-colors hover:bg-emerald-100"
+                            title="Edit User"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleStatusToggle(u)}
+                            className={`rounded-lg p-2 transition-colors ${
+                              u.isActive
+                                ? "bg-green-50 text-green-700 hover:bg-green-100"
+                                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                            }`}
+                            title={u.isActive ? "Deactivate User" : "Activate User"}
+                          >
+                            {u.isActive ? <Power size={16} /> : <PowerOff size={16} />}
+                          </button>
+                          <button
+                            onClick={() => handleResetPassword(u)}
+                            className="rounded-lg bg-amber-50 p-2 text-amber-700 transition-colors hover:bg-amber-100"
+                            title="Reset Password"
+                          >
+                            <Key size={16} />
+                          </button>
+                        </div>
+                        {deleteConfirmId === u._id ? (
+                          <div className="flex items-center gap-1 rounded-lg bg-red-50 p-1">
+                            <span className="px-1 text-xs font-medium text-red-600">
+                              Delete?
+                            </span>
+                            <button
+                              onClick={() => executeDeletion(u._id)}
+                              className="rounded bg-red-600 p-1 text-white hover:bg-red-700"
+                              title="Confirm delete"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="rounded bg-gray-200 p-1 text-gray-600 hover:bg-gray-300"
+                              title="Cancel delete"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteConfirmId(u._id)}
+                            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            title="Delete User"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </article>
               );
             })}
           </div>
 
+          {/* Desktop Table View (unchanged) */}
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[780px] text-left">
               <thead>
@@ -1440,7 +1606,7 @@ const UserAdmin = () => {
 
                     {/* Actions Column */}
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-0.5">
                         <button 
                           onClick={() => handleViewProfile(u)} 
                           className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -1449,13 +1615,13 @@ const UserAdmin = () => {
                           <Eye size={14} />
                         </button>
                         
-                        <button 
-                          onClick={() => handleViewActivity(u)} 
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="View Activity"
+                        <Link
+                          to={`/system-logs?search=${encodeURIComponent(u.name)}`}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors inline-block"
+                          title="View Activity Logs"
                         >
                           <Activity size={14} />
-                        </button>
+                        </Link>
                         
                         <button 
                           onClick={() => { 
@@ -1589,17 +1755,28 @@ const UserAdmin = () => {
             </div>
           )}
         </section>
+
+        {/* Live Activity Feed Section */}
         <section className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
               <Activity size={18} className="text-blue-600" /> Live Activity Feed
             </h3>
-            <button
-              onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-activity"] })}
-              className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/system-logs"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <ClipboardList size={14} />
+                View Full Logs
+              </Link>
+              <button
+                onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-activity"] })}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <select value={globalActivityFilter.userId} onChange={(e) => setGlobalActivityFilter((p) => ({ ...p, userId: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">

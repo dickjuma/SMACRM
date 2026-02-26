@@ -190,7 +190,7 @@ const DOCUMENT_ICONS = {
 // COMPONENTS
 // ============================
 
-// Statistics Panel (kept)
+// Statistics Panel
 const StatisticsPanel = ({ data }) => {
   const { data: emailStats, isLoading } = useQuery({
     queryKey: ['emailStats'],
@@ -641,6 +641,42 @@ const EmailSignatureComponent = ({ onApplySignature }) => {
   );
 };
 
+// Memoized Client Item for bulk mode (prevents re-renders)
+const ClientItem = React.memo(({ client, isSelected, onToggle }) => {
+  const handleClick = useCallback(() => {
+    onToggle(client.email);
+  }, [client.email, onToggle]);
+
+  return (
+    <div
+      onClick={handleClick}
+      className={`p-4 rounded-lg cursor-pointer flex items-center gap-3 border transition-all hover:scale-[1.02] ${
+        isSelected ? "bg-blue-50 border-blue-200" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+      }`}
+    >
+      <div
+        className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
+          isSelected ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"
+        }`}
+      >
+        {isSelected && <Check size={12} strokeWidth={3} />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+            <User size={16} className="text-gray-600" />
+          </div>
+          <div className="truncate">
+            <p className="text-sm font-semibold text-gray-800 truncate">{client.name}</p>
+            {client.company && <p className="text-xs text-gray-600 truncate">{client.company}</p>}
+            <p className="text-xs text-gray-500 font-mono truncate">{client.email || 'No email'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // Main Email Composer Content
 const EmailComposerContent = () => {
   const [mode, setMode] = useState("single");
@@ -673,6 +709,10 @@ const EmailComposerContent = () => {
     linkTracking: true
   });
   
+  // Pagination for bulk client list
+  const [visibleClientCount, setVisibleClientCount] = useState(20);
+  const clientListRef = useRef(null);
+  
   const fileInputRef = useRef(null);
   const editorRef = useRef(null);
   const queryClient = useQueryClient();
@@ -700,6 +740,7 @@ const EmailComposerContent = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedClientSearch(clientSearch.trim().toLowerCase());
+      setVisibleClientCount(20); // Reset pagination on search
     }, 180);
     return () => clearTimeout(timer);
   }, [clientSearch]);
@@ -972,7 +1013,7 @@ const EmailComposerContent = () => {
     }
   };
 
-  const toggleClient = (email) => {
+  const toggleClient = useCallback((email) => {
     if (dispatchMutation.isSuccess) dispatchMutation.reset();
     setLastSendSummary(null);
     if (!email) {
@@ -980,7 +1021,7 @@ const EmailComposerContent = () => {
       return;
     }
     setSelectedClients(prev => prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]);
-  };
+  }, [dispatchMutation]);
 
   const addCcRecipient = () => {
     const newEmail = prompt("Enter CC email:");
@@ -1195,6 +1236,26 @@ const EmailComposerContent = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Load more clients when scrolling near bottom
+  const handleClientListScroll = useCallback((e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    if (scrollHeight - scrollTop - clientHeight < 200) {
+      setVisibleClientCount(prev => Math.min(prev + 20, filteredClients.length));
+    }
+  }, [filteredClients.length]);
+
+  useEffect(() => {
+    const listEl = clientListRef.current;
+    if (listEl) {
+      listEl.addEventListener('scroll', handleClientListScroll);
+      return () => listEl.removeEventListener('scroll', handleClientListScroll);
+    }
+  }, [handleClientListScroll]);
+
+  const visibleClients = useMemo(() => 
+    filteredClients.slice(0, visibleClientCount)
+  , [filteredClients, visibleClientCount]);
+
   if (isLoading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-white gap-6">
       <div className="relative">
@@ -1253,8 +1314,8 @@ const EmailComposerContent = () => {
       <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt,.csv" />
       
       {/* HEADER */}
-      <header className="relative z-50 h-16 border-b border-gray-200 bg-white flex items-center justify-between px-6 shrink-0 shadow-sm">
-        <div className="flex items-center gap-4">
+      <header className="relative z-50 h-16 border-b border-gray-200 bg-white flex items-center justify-between px-4 sm:px-6 shrink-0 shadow-sm">
+        <div className="flex items-center gap-3">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded-lg transition-all lg:hidden text-gray-600 hover:text-gray-800">
             <Menu size={20} />
           </button>
@@ -1266,8 +1327,8 @@ const EmailComposerContent = () => {
               </div>
             </div>
             <div>
-              <span className="text-lg font-bold text-gray-800">Email Composer Pro</span>
-              <p className="text-xs text-gray-500">Send emails & track history</p>
+              <span className="text-lg font-bold text-gray-800">Email Composer</span>
+              <p className="text-xs text-gray-500 hidden sm:block">Send & track</p>
             </div>
           </div>
           
@@ -1282,7 +1343,7 @@ const EmailComposerContent = () => {
           </div>
         </div>
 
-        <div className="relative flex items-center gap-3">
+        <div className="relative flex items-center gap-2 sm:gap-3">
           {showVariables && (
             <div className="absolute top-16 right-0 sm:right-4 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[min(16rem,92vw)]">
               <div className="flex items-center justify-between mb-2">
@@ -1333,25 +1394,25 @@ const EmailComposerContent = () => {
             <History size={18} />
           </button>
           
-          <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+          <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
           </button>
           
-          <button onClick={() => refetch()} className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+          <button onClick={() => refetch()} className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block" title="Refresh">
             <RefreshCw size={18} />
           </button>
           
           <button 
             onClick={handleDispatch} 
             disabled={dispatchMutation.isPending || (mode === 'single' && !selectedDoc) || (mode === 'bulk' && selectedClients.length === 0)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-medium text-sm transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
           >
             {dispatchMutation.isPending ? (
               <Loader2 size={16} className="animate-spin"/>
             ) : (
               <Send size={16} className="group-hover:translate-x-0.5 transition-transform"/>
             )}
-            <span>{mode === 'bulk' ? `Send (${selectedClients.length})` : 'Send Now'}</span>
+            <span className="hidden sm:inline">{mode === 'bulk' ? `Send (${selectedClients.length})` : 'Send'}</span>
           </button>
         </div>
       </header>
@@ -1408,14 +1469,14 @@ const EmailComposerContent = () => {
                     activeTab === t ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-800 hover:bg-gray-200"
                   }`}>
                     {DOCUMENT_ICONS[t]}
-                    {t}
+                    <span className="hidden sm:inline">{t}</span>
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3" ref={clientListRef}>
             {mode === "single" ? filteredDocuments.map(doc => (
               <button key={doc._id} onClick={() => handleDocSelect(doc)} className={`w-full text-left p-4 rounded-lg border transition-all hover:scale-[1.02] ${
                 selectedDoc?._id === doc._id ? "bg-blue-50 border-blue-200 shadow-sm" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
@@ -1464,29 +1525,23 @@ const EmailComposerContent = () => {
                   </div>
                 </div>
               </button>
-            )) : filteredClients.map(client => (
-              <div key={client._id} onClick={() => toggleClient(client.email)} className={`p-4 rounded-lg cursor-pointer flex items-center gap-3 border transition-all hover:scale-[1.02] ${
-                selectedClients.includes(client.email) ? "bg-blue-50 border-blue-200" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-              }`}>
-                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
-                  selectedClients.includes(client.email) ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"
-                }`}>
-                  {selectedClients.includes(client.email) && <Check size={12} strokeWidth={3}/>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <User size={16} className="text-gray-600" />
-                    </div>
-                    <div className="truncate">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{client.name}</p>
-                      {client.company && <p className="text-xs text-gray-600 truncate">{client.company}</p>}
-                      <p className="text-xs text-gray-500 font-mono truncate">{client.email || 'No email'}</p>
-                    </div>
+            )) : (
+              <>
+                {visibleClients.map(client => (
+                  <ClientItem
+                    key={client._id}
+                    client={client}
+                    isSelected={selectedClients.includes(client.email)}
+                    onToggle={toggleClient}
+                  />
+                ))}
+                {visibleClientCount < filteredClients.length && (
+                  <div className="text-center py-2 text-xs text-gray-500">
+                    Scroll down to load more...
                   </div>
-                </div>
-              </div>
-            ))}
+                )}
+              </>
+            )}
           </div>
         </aside>
         {isSidebarOpen && (
@@ -1502,7 +1557,7 @@ const EmailComposerContent = () => {
           {/* Mobile Back Button */}
           {(selectedDoc || (mode === "bulk" && selectedClients.length > 0)) && (
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden fixed top-20 left-4 z-30 flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-gray-200 text-gray-700 shadow-sm font-medium text-sm hover:bg-gray-50 transition-all group">
-              <ChevronLeft size={16} className="group-hover:-translate-x-0.5 transition-transform"/> Back to Documents
+              <ChevronLeft size={16} className="group-hover:-translate-x-0.5 transition-transform"/> Documents
             </button>
           )}
 
@@ -1513,8 +1568,8 @@ const EmailComposerContent = () => {
           )}
 
           {(selectedDoc || (mode === "bulk" && selectedClients.length > 0)) ? (
-            <div className="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 relative mt-8 lg:mt-0">
-              {false && dispatchMutation.isSuccess ? (
+            <div className="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 relative mt-16 lg:mt-0">
+              {dispatchMutation.isSuccess ? (
                 <div className="bg-white border border-gray-200 rounded-xl p-8 md:p-12 text-center shadow-sm">
                   <div className="relative inline-block mb-6">
                     <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md">
@@ -1564,14 +1619,14 @@ const EmailComposerContent = () => {
                         <FileText size={18} className="text-blue-600" />
                         <h3 className="text-sm font-bold text-gray-800">Quick Templates</h3>
                       </div>
-                      <span className="text-xs text-gray-500">Click to apply template</span>
+                      <span className="text-xs text-gray-500">Click to apply</span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {Object.entries(TEMPLATES).map(([key, t]) => (
-                        <button key={key} onClick={() => applyTemplate(key)} className={`w-full flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium transition-all hover:scale-[1.02] ${
+                        <button key={key} onClick={() => applyTemplate(key)} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-[1.02] ${
                           activeTemplate === key ? `${t.borderColor} ${t.bgColor} border-2 text-gray-800 shadow-sm` : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
                         }`}>
-                          {t.icon} <span>{t.label}</span>
+                          {t.icon} <span className="truncate">{t.label}</span>
                         </button>
                       ))}
                     </div>
@@ -1766,7 +1821,7 @@ const EmailComposerContent = () => {
                               {dispatchMutation.isPending ? (
                                 <><Loader2 size={16} className="animate-spin" /> Sending...</>
                               ) : (
-                                <><Send size={16} /> Send Email</>
+                                <><Send size={16} /> Send</>
                               )}
                             </button>
                           </div>

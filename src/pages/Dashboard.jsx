@@ -191,7 +191,7 @@ const Dashboard = () => {
               <ShieldCheck className="h-5 w-5 text-indigo-300" />
             </div>
             <div>
-              <h1 className="text-xs font-black uppercase tracking-tight text-slate-900 sm:text-sm md:text-lg">Executive Finance Dashboard</h1>
+              <h1 className="text-xs font-black uppercase tracking-tight text-slate-900 sm:text-sm md:text-lg">Executive Dashboard</h1>
               <p className="hidden text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 sm:block">SMA Performance Office</p>
             </div>
           </div>
@@ -207,8 +207,8 @@ const Dashboard = () => {
       <main className="mx-auto max-w-7xl space-y-4 px-2 pt-4 sm:space-y-6 sm:px-3 sm:pt-6 md:px-6 lg:px-8">
         <section className="rounded-2xl border border-slate-200 bg-white p-2 sm:border-0 sm:bg-transparent sm:p-0">
           <div className="mb-2 flex items-center justify-between px-1 sm:mb-3 sm:px-0">
-            <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 sm:text-sm">Executive Snapshot</h2>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Live</span>
+            <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 sm:text-sm">Key Metrics</h2>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Real-time</span>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-6">
           {kpiCards.map((card) => (
@@ -237,9 +237,9 @@ const Dashboard = () => {
             <div className="mb-5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-indigo-500" />
-                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Cross-Module Activity</h3>
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Activity Overview</h3>
               </div>
-              <span className="text-xs font-semibold text-slate-400">Reporting View</span>
+              <span className="text-xs font-semibold text-slate-400">All modules</span>
             </div>
             <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -329,7 +329,7 @@ const Dashboard = () => {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Risk Register</h4>
+            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Alerts</h4>
             <div className="mt-4 space-y-3">
               {alerts.length === 0 && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
@@ -349,12 +349,6 @@ const Dashboard = () => {
                   <p className="mt-1 text-xs text-rose-700">{alert.detail}</p>
                 </div>
               ))}
-            </div>
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-              <p className="font-semibold text-slate-600">Management Note</p>
-              <p className="mt-1 text-slate-500">
-                Prioritize overdue recovery and maintain collections above 70% to preserve cash flow quality.
-              </p>
             </div>
           </div>
         </section>
@@ -380,7 +374,7 @@ const Dashboard = () => {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Executive Indicators</h4>
+            <h4 className="text-sm font-black uppercase tracking-[0.14em] text-slate-800">Key Indicators</h4>
             <div className="mt-4 space-y-3 text-sm">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Collection Rate</p>

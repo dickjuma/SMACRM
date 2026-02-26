@@ -16,6 +16,7 @@ import UserAdmin from "./pages/UserAdmin";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/Settings";
+import SystemLogs from "./pages/SystemLogs";
 
 function AppContent() {
   const location = useLocation();
@@ -81,6 +82,7 @@ function AppContent() {
                 <Route path="/fincomm" element={<RequireAdmin><EmailComposer /></RequireAdmin>} />
                 <Route path="/useradmin" element={<RequireAdmin><UserAdmin /></RequireAdmin>} />
                 <Route path="/settings" element={<RequireAdmin><Settings /></RequireAdmin>} />
+                <Route path="/systemlogs" element={<RequireAdmin><SystemLogs /></RequireAdmin>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </div>
